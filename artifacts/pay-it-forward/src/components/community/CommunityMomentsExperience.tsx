@@ -50,6 +50,7 @@ type MomentSpark = {
   caption: string | null;
   tags?: string[];
   audience: string;
+  status?: string;
   reply_enabled?: boolean;
   created_at: string | null;
   expires_at?: string | null;
@@ -1295,6 +1296,15 @@ export function CommunityMomentsExperience({
                     aria-setsize={cursor ? -1 : sparks.length}
                     data-testid={`card-moment-${spark.id}`}
                   >
+                    {spark.status === "pending" && (
+                      <div
+                        role="status"
+                        className="absolute inset-x-4 top-4 z-20 rounded-xl border border-amber-200/40 bg-neutral-950/90 px-4 py-3 text-sm font-semibold text-amber-100 shadow-lg"
+                        data-testid={`status-spark-pending-review-${spark.id}`}
+                      >
+                        Saved. Only you can see this Spark while it is being reviewed.
+                      </div>
+                    )}
                     {current && playbackAllowed && currentMediaUrl && media?.media_type === "video" && (
                       <video
                         ref={videoRef}

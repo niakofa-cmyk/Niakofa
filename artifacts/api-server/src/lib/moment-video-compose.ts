@@ -4,6 +4,19 @@ export const MOMENT_COMPOSE_INTENT = "camera_clip_reel" as const;
 export const MOMENT_COMPOSE_MAX_CLIPS = 6;
 export const MOMENT_COMPOSE_MAX_DURATION_MS = 180_000;
 
+export function isMomentCompositionStoryStatus(status: string): boolean {
+  return status === "published" || status === "pending";
+}
+
+/** Status gate only; published stories still require the audience check. */
+export function isMomentCompositionStatusVisibleToViewer(
+  status: string,
+  authorUserId: number,
+  viewerUserId: number,
+): boolean {
+  return status === "published" || (status === "pending" && authorUserId === viewerUserId);
+}
+
 export function validMomentComposeIds(value: unknown): value is number[] {
   return Array.isArray(value)
     && value.length >= 1

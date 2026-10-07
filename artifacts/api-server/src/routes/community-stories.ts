@@ -51,6 +51,8 @@ import {
 import {
   MOMENT_COMPOSE_INTENT,
   MOMENT_COMPOSE_MAX_DURATION_MS,
+  isMomentCompositionStatusVisibleToViewer,
+  isMomentCompositionStoryStatus,
   isPublishedStoryMediaContext,
   momentCompositionFingerprint,
   withinMomentDurationLimit,
@@ -397,6 +399,7 @@ function publicStory(row: {
   caption: string | null;
   tags: string[];
   audience: string;
+  status?: string;
   reply_enabled: boolean;
   created_at: Date;
   expires_at: Date;
@@ -425,6 +428,7 @@ function publicStory(row: {
     caption: row.caption,
     tags: row.tags,
     audience: row.audience,
+    ...(viewerUserId === row.author_user_id && row.status ? { status: row.status } : {}),
     reply_enabled: row.reply_enabled,
     featured_at: row.featured_at ? serializeDate(row.featured_at) : null,
     remix_enabled: row.remix_enabled,
@@ -878,6 +882,7 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
     response_to_author_user_id: communityStoriesTable.response_to_author_user_id,
     response_author_name: communityStoriesTable.response_to_author_name,
     challenge_key: communityStoriesTable.challenge_key,
+    status: communityStoriesTable.status,
     created_at: communityStoriesTable.created_at,
     expires_at: communityStoriesTable.expires_at,
     composition_manifest: communityStoriesTable.composition_manifest,
@@ -886,7 +891,13 @@ router.get("/community/stories", requireAuth, requireApproved, async (req, res) 
   }).from(communityStoriesTable)
     .innerJoin(usersTable, eq(usersTable.id, communityStoriesTable.author_user_id))
     .where(and(
-      eq(communityStoriesTable.status, "published"),
+      or(
+        eq(communityStoriesTable.status, "published"),
+        and(
+          eq(communityStoriesTable.status, "pending"),
+          eq(communityStoriesTable.author_user_id, userId),
+        ),
+      ),
       sql`${communityStoriesTable.expires_at} > ${now}`,
       eq(usersTable.approval_status, "approved"),
       eq(usersTable.is_suspended, false),
@@ -1099,7 +1110,7 @@ router.post("/community/stories/:id/moment-composition", requireAuth, requireApp
         .limit(1)
         .for("update");
       if (!story || story.author_user_id !== req.authenticatedUserId
-        || story.status !== "published" || story.expires_at <= new Date()) return { error: "not_found" } as const;
+        || !isMomentCompositionStoryStatus(story.status) || story.expires_at <= new Date()) return { error: "not_found" } as const;
       if (story.exchange_listing_id !== null) return { error: "invalid" } as const;
       if (story.audience === "hub" && !story.hub_id) return { error: "invalid" } as const;
       const assets = await tx.select({
@@ -1219,7 +1230,11 @@ router.get("/community/stories/:id/moment-composition", requireAuth, requireAppr
   const storyId = positiveId(req.params.id);
   if (!storyId) return res.status(404).json({ error: "Moment composition not found." });
   const composition = await momentCompositionForStory(storyId);
-  if (!composition || composition.story_status !== "published" || composition.expires_at <= new Date()
+  if (!composition || !isMomentCompositionStatusVisibleToViewer(
+    composition.story_status,
+    composition.author_user_id,
+    req.authenticatedUserId!,
+  ) || composition.expires_at <= new Date()
     || !(await viewerCanReadStory(req.authenticatedUserId!, composition))) {
     return res.status(404).json({ error: "Moment composition not found." });
   }
@@ -1232,6 +1247,9 @@ router.get("/community/stories/:id/moment-composition", requireAuth, requireAppr
       duration_ms: ready ? composition.duration_ms : null,
       playback_grant_url: `/api/community/stories/${storyId}/moment-composition/playback-grant`,
       source_count: Array.isArray(composition.source_media_asset_ids) ? composition.source_media_asset_ids.length : 0,
+      ...(composition.author_user_id === req.authenticatedUserId
+        ? { source_media_asset_ids: composition.source_media_asset_ids }
+        : {}),
     },
   });
 });
@@ -2092,7 +2110,11 @@ router.post("/community/stories/:id/moment-composition/playback-grant", requireA
   const userId = req.authenticatedUserId!;
   const composition = storyId ? await momentCompositionForStory(storyId) : null;
   if (!composition || composition.status !== "ready" || composition.asset_status !== "ready"
-    || !composition.variant_key || composition.story_status !== "published"
+    || !composition.variant_key || !isMomentCompositionStatusVisibleToViewer(
+      composition.story_status,
+      composition.author_user_id,
+      userId,
+    )
     || composition.expires_at <= new Date() || !(await viewerCanReadStory(userId, composition))) {
     return res.status(404).json({ error: "Moment video not found." });
   }
@@ -2156,7 +2178,11 @@ router.get("/community/stories/:id/moment-composition/play", async (req, res) =>
   const composition = await momentCompositionForStory(storyId);
   if (!composition || claims.mediaId !== composition.derived_media_asset_id
     || composition.status !== "ready" || composition.asset_status !== "ready"
-    || !composition.variant_key || composition.story_status !== "published"
+    || !composition.variant_key || !isMomentCompositionStatusVisibleToViewer(
+      composition.story_status,
+      composition.author_user_id,
+      viewer.id,
+    )
     || composition.expires_at <= new Date() || !(await viewerCanReadStory(viewer.id, composition))) {
     return res.status(404).json({ error: "Moment video not found." });
   }

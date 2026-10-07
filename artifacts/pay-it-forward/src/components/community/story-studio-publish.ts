@@ -64,6 +64,23 @@ export function isCameraClipReelSelection(files: File[]): boolean {
   return files.length >= 1 && files.length <= 6 && files.every((file) => file.type.startsWith("video/"));
 }
 
+export function reconcileCameraClipReelFingerprints(
+  selectedFingerprints: string[],
+  recordedFingerprints: string[],
+): string[] | null {
+  if (selectedFingerprints.length < 1 || selectedFingerprints.length > 6) return null;
+  const remaining = new Map<string, number>();
+  recordedFingerprints.forEach((fingerprint) => {
+    remaining.set(fingerprint, (remaining.get(fingerprint) ?? 0) + 1);
+  });
+  for (const fingerprint of selectedFingerprints) {
+    const count = remaining.get(fingerprint) ?? 0;
+    if (count < 1) return null;
+    remaining.set(fingerprint, count - 1);
+  }
+  return [...selectedFingerprints];
+}
+
 export function validateMomentCompositionPlaybackUrl(playbackUrl: string, storyId: number, origin: string): string {
   if (!validId(storyId)) throw new Error("The camera reel playback URL was invalid.");
   const playback = new URL(playbackUrl, origin);
@@ -117,6 +134,7 @@ export async function getCameraClipReelStatus(storyId: number, signal?: AbortSig
   failureCode: string | null;
   durationMs: number | null;
   playbackGrantUrl: string;
+  sourceMediaAssetIds: number[];
 }> {
   if (!validId(storyId)) throw new Error("Spark not found.");
   const response = await fetch(`/api/community/stories/${storyId}/moment-composition`, {
@@ -126,7 +144,13 @@ export async function getCameraClipReelStatus(storyId: number, signal?: AbortSig
   });
   const result = await response.json().catch(() => ({})) as {
     error?: string;
-    composition?: { status?: string; failure_code?: string | null; duration_ms?: number | null; playback_grant_url?: string };
+    composition?: {
+      status?: string;
+      failure_code?: string | null;
+      duration_ms?: number | null;
+      playback_grant_url?: string;
+      source_media_asset_ids?: unknown;
+    };
   };
   const composition = result.composition;
   if (!response.ok || !composition || typeof composition.status !== "string"
@@ -138,6 +162,10 @@ export async function getCameraClipReelStatus(storyId: number, signal?: AbortSig
     failureCode: composition.failure_code ?? null,
     durationMs: composition.duration_ms ?? null,
     playbackGrantUrl: composition.playback_grant_url,
+    sourceMediaAssetIds: Array.isArray(composition.source_media_asset_ids)
+      && composition.source_media_asset_ids.every(validId)
+      ? [...composition.source_media_asset_ids]
+      : [],
   };
 }
 

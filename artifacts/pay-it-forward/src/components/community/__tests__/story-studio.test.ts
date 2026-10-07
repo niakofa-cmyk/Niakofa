@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CameraClipReelPendingError, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
+import { CameraClipReelPendingError, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, reconcileCameraClipReelFingerprints, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
 import { buildMomentMediaAccessibility, parseMomentStudioTags, restoreMomentStudioAccessibility, validateMomentStudioWebVtt, type MomentStudioAccessibilityDraft } from "../moment-studio-accessibility";
 import { trimVideoFile } from "../story-media-tools";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, isValidCameraReelAssetIds, loadStudioDraft, persistStudioDraft, persistStudioPublishAttempt, recoverStudioCameraReelAssetIds, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "../story-studio-draft";
@@ -13,6 +13,14 @@ test("camera reel marker applies to one through six all-video camera groups", ()
   assert.equal(isCameraClipReelSelection([videoFile("one.webm"), videoFile("two.webm")]), true);
   assert.equal(isCameraClipReelSelection([videoFile("one.webm"), file("photo.jpg")]), false);
   assert.equal(isCameraClipReelSelection(Array.from({ length: 7 }, (_, index) => videoFile(`${index}.webm`))), false);
+});
+
+test("camera reel marker follows a reordered or reduced selection without accepting new media", () => {
+  assert.deepEqual(reconcileCameraClipReelFingerprints(["clip-b", "clip-a"], ["clip-a", "clip-b"]), ["clip-b", "clip-a"]);
+  assert.deepEqual(reconcileCameraClipReelFingerprints(["clip-b"], ["clip-a", "clip-b"]), ["clip-b"]);
+  assert.equal(reconcileCameraClipReelFingerprints(["library-video"], ["clip-a", "clip-b"]), null);
+  assert.equal(reconcileCameraClipReelFingerprints(["clip-a", "clip-a"], ["clip-a", "clip-b"]), null);
+  assert.equal(reconcileCameraClipReelFingerprints([], ["clip-a"]), null);
 });
 
 test("camera stitching retry restores its dedicated order and recovers legacy upload slots", () => {
@@ -64,6 +72,7 @@ test("camera composition client sends the ordered id contract and consumes priva
       failure_code: null,
       duration_ms: 4200,
       playback_grant_url: "/api/community/stories/52/moment-composition/playback-grant",
+      source_media_asset_ids: [71, 70],
     } }), { status: 200 });
   };
   try {
@@ -79,6 +88,7 @@ test("camera composition client sends the ordered id contract and consumes priva
       failureCode: null,
       durationMs: 4200,
       playbackGrantUrl: "/api/community/stories/52/moment-composition/playback-grant",
+      sourceMediaAssetIds: [71, 70],
     });
     await assert.rejects(requestCameraClipReel(52, [71, 71]), /unique video assets/);
   } finally {

@@ -83,6 +83,8 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(moments, /role="feed"/);
     assert.match(moments, /snap-y snap-mandatory/);
     assert.match(moments, /aria-posinset=\{index \+ 1\}/);
+    assert.match(moments, /spark\.status === "pending"/);
+    assert.match(moments, /Only you can see this Spark while it is being reviewed/);
     assert.match(moments, /status-loading-moments/);
     assert.match(moments, /status-empty-moments/);
     assert.match(moments, /role="alert"/);

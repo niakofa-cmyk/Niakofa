@@ -1,6 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "@jest/globals";
-import { validMomentComposeIds } from "../lib/moment-video-compose";
+import {
+  isMomentCompositionStatusVisibleToViewer,
+  isMomentCompositionStoryStatus,
+  validMomentComposeIds,
+} from "../lib/moment-video-compose";
 
 const routeFile = new URL("../routes/community-stories.ts", import.meta.url);
 const workerFile = new URL("../workers/media-process-worker.ts", import.meta.url);
@@ -51,6 +55,34 @@ describe("Moment camera-reel server contract", () => {
     expect(route).toMatch(/viewerCanReadStory\(req\.authenticatedUserId!, composition\)/);
     expect(route).toMatch(/verifyStoryPlaybackGrant\(cookieValue, tokenMediaId, secret\)/);
     expect(route).toMatch(/streamAssetRange\(\s*composition\.variant_key/);
+  });
+
+  it("shows review-pending Moments only to their author and returns stitch order only to the author", async () => {
+    const route = await readFile(routeFile, "utf8");
+    expect(route).toMatch(/eq\(communityStoriesTable\.status, "published"\)[\s\S]*eq\(communityStoriesTable\.status, "pending"\)[\s\S]*eq\(communityStoriesTable\.author_user_id, userId\)/);
+    expect(route).toMatch(/viewerUserId === row\.author_user_id && row\.status/);
+    expect(route).toMatch(/composition\.author_user_id === req\.authenticatedUserId[\s\S]*source_media_asset_ids: composition\.source_media_asset_ids/);
+  });
+
+  it("processes pending camera compositions privately for their author", async () => {
+    expect(isMomentCompositionStoryStatus("pending")).toBe(true);
+    expect(isMomentCompositionStoryStatus("published")).toBe(true);
+    expect(isMomentCompositionStoryStatus("rejected")).toBe(false);
+    expect(isMomentCompositionStatusVisibleToViewer("pending", 7, 7)).toBe(true);
+    expect(isMomentCompositionStatusVisibleToViewer("pending", 7, 8)).toBe(false);
+    expect(isMomentCompositionStatusVisibleToViewer("published", 7, 8)).toBe(true);
+    expect(isMomentCompositionStatusVisibleToViewer("rejected", 7, 7)).toBe(false);
+
+    const [route, worker, queue] = await Promise.all([
+      readFile(routeFile, "utf8"),
+      readFile(workerFile, "utf8"),
+      readFile(queueFile, "utf8"),
+    ]);
+    expect(route).toMatch(/!isMomentCompositionStoryStatus\(story\.status\)/);
+    expect(route.match(/isMomentCompositionStatusVisibleToViewer\(/g)).toHaveLength(3);
+    expect(worker).toMatch(/isMomentCompositionStoryStatus\(story\.status\)/);
+    expect(worker).toMatch(/isMomentCompositionStoryStatus\(composition\.story_status\)/);
+    expect(queue).toMatch(/!isMomentCompositionStoryStatus\(story\.status\)/);
   });
 
 it("prevents derived compositions from generic media, thumbnail, HEAD, or range playback", async () => {
@@ -146,7 +178,7 @@ it("prevents derived compositions from generic media, thumbnail, HEAD, or range 
     expect(queue).toMatch(/eq\(mediaProcessingJobsTable\.status, pending\.status\)/);
     expect(queue).toMatch(/eq\(mediaProcessingJobsTable\.updated_at, pending\.updatedAt\)/);
     expect(queue).toMatch(/\.for\("share"\)[\s\S]*\.for\("update"\)/);
-    expect(queue).toMatch(/if \(!story \|\| story\.status !== "published" \|\| story\.expires_at <= new Date\(\)\) return false/);
+    expect(queue).toMatch(/if \(!story \|\| !isMomentCompositionStoryStatus\(story\.status\) \|\| story\.expires_at <= new Date\(\)\) return false/);
   });
 
   it("validates published source Story context in both API and worker", async () => {

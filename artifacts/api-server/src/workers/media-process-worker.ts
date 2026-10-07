@@ -34,6 +34,7 @@ import { getMediaToolPaths } from "../lib/mediaCapabilities";
 import {
   MOMENT_COMPOSE_MAX_CLIPS,
   MOMENT_COMPOSE_MAX_DURATION_MS,
+  isMomentCompositionStoryStatus,
   isPublishedStoryMediaContext,
   momentCompositionAttemptOwnsJob,
   momentClipNormalizeArgs,
@@ -147,7 +148,7 @@ async function stageMomentCompositionOutput(
         .where(eq(communityStoriesTable.id, storyId))
         .limit(1)
         .for("share");
-      if (!story || story.status !== "published" || story.expires_at <= new Date()) return false;
+      if (!story || !isMomentCompositionStoryStatus(story.status) || story.expires_at <= new Date()) return false;
       const [asset] = await tx.select({ status: mediaAssetsTable.status })
         .from(mediaAssetsTable)
         .where(eq(mediaAssetsTable.id, mediaAssetId))
@@ -182,7 +183,7 @@ async function stageMomentCompositionOutput(
         .where(eq(communityStoriesTable.id, storyId))
         .limit(1)
         .for("share");
-      if (!story || story.status !== "published" || story.expires_at <= new Date()) return false;
+      if (!story || !isMomentCompositionStoryStatus(story.status) || story.expires_at <= new Date()) return false;
       const [asset] = await tx.select({ status: mediaAssetsTable.status })
         .from(mediaAssetsTable)
         .where(eq(mediaAssetsTable.id, mediaAssetId))
@@ -240,7 +241,7 @@ async function beginMomentCompositionAttempt(
       .limit(1)
       .for("update");
     if (!claimedJob || !momentCompositionAttemptOwnsJob(claimedJob.status, claimedJob.attempts, attempt)) return false;
-    if (!story || story.status !== "published" || story.expires_at <= new Date()
+    if (!story || !isMomentCompositionStoryStatus(story.status) || story.expires_at <= new Date()
       || !asset || asset.status === "deleted") {
       await tx.update(mediaProcessingJobsTable).set({
         status: "cancelled",
@@ -295,7 +296,7 @@ async function completeMomentCompositionAttempt(
       .where(eq(mediaAssetsTable.id, mediaAssetId))
       .limit(1)
       .for("update");
-    if (!story || story.status !== "published" || story.expires_at <= new Date()
+    if (!story || !isMomentCompositionStoryStatus(story.status) || story.expires_at <= new Date()
       || !asset || asset.status === "deleted") {
       await tx.update(mediaProcessingJobsTable).set({
         status: "cancelled",
@@ -574,7 +575,7 @@ async function processMomentComposition(mediaAssetId: number, jobId: number, att
     }
     compositionStoryId = composition.story_id;
     if (!(await beginMomentCompositionAttempt(composition.story_id, mediaAssetId, jobId, attempt))) return;
-    if (composition.story_status !== "published" || composition.expires_at <= new Date()
+    if (!isMomentCompositionStoryStatus(composition.story_status) || composition.expires_at <= new Date()
       || composition.exchange_listing_id !== null || composition.owner_user_id !== composition.author_user_id
       || !Array.isArray(composition.source_ids) || composition.source_ids.length < 1
       || composition.source_ids.length > MOMENT_COMPOSE_MAX_CLIPS
@@ -753,7 +754,7 @@ async function claimMomentCompositionJob(mediaAssetId: number) {
       .where(eq(communityStoriesTable.id, composition.story_id))
       .limit(1)
       .for("share");
-    if (!story || story.status !== "published" || story.expires_at <= new Date()) return undefined;
+    if (!story || !isMomentCompositionStoryStatus(story.status) || story.expires_at <= new Date()) return undefined;
     const [asset] = await tx.select({ status: mediaAssetsTable.status })
       .from(mediaAssetsTable)
       .where(eq(mediaAssetsTable.id, mediaAssetId))

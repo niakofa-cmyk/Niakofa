@@ -13,7 +13,7 @@ import { and, eq, inArray, lt, ne, notInArray, or } from "drizzle-orm";
 import { mediaProcessingQueue } from "./queue";
 import { logger } from "./logger";
 import { assertSupportedMediaJob, isMediaPlatformV21Enabled, mediaJobsForType } from "./media-platform";
-import { isUnfinishedResumableUpload } from "./moment-video-compose";
+import { isMomentCompositionStoryStatus, isUnfinishedResumableUpload } from "./moment-video-compose";
 
 export interface MediaProcessingJobData {
   mediaAssetId: number;
@@ -356,7 +356,7 @@ export async function requeueStaleMediaAssets(limit = 100): Promise<number> {
           .where(eq(communityStoriesTable.id, pending.storyId))
           .limit(1)
           .for("share");
-        if (!story || story.status !== "published" || story.expires_at <= new Date()) return false;
+        if (!story || !isMomentCompositionStoryStatus(story.status) || story.expires_at <= new Date()) return false;
         const [asset] = await tx.select({ status: mediaAssetsTable.status })
           .from(mediaAssetsTable)
           .where(eq(mediaAssetsTable.id, pending.mediaAssetId))

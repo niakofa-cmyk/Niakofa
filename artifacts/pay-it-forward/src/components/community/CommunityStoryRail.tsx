@@ -31,7 +31,7 @@ import {
 } from "./moment-studio-accessibility";
 import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, isValidCameraReelAssetIds, loadStudioDraft, newStudioPublishId, persistStudioPublishAttempt, recoverStudioCameraReelAssetIds, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "./story-studio-draft";
-import { CameraClipReelPendingError, chooseStudioFiles, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validateStudioFiles } from "./story-studio-publish";
+import { CameraClipReelPendingError, chooseStudioFiles, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, reconcileCameraClipReelFingerprints, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validateStudioFiles } from "./story-studio-publish";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { getExchangeListings } from "@/lib/community-exchange-client";
 import type { ExchangeListing } from "@/lib/community-exchange-types";
@@ -691,10 +691,15 @@ export function CommunityStoryRail({
   useEffect(() => {
     if (!cameraClipReelMarker) return;
     const currentFiles = selectedStudioFiles(files, gallerySelection);
-    if (!isCameraClipReelSelection(currentFiles)
-      || JSON.stringify(cameraClipReelMarker.orderedFingerprints) !== JSON.stringify(currentFiles.map(studioFileFingerprint))) {
+    const currentFingerprints = currentFiles.map(studioFileFingerprint);
+    const reconciledFingerprints = isCameraClipReelSelection(currentFiles)
+      ? reconcileCameraClipReelFingerprints(currentFingerprints, cameraClipReelMarker.orderedFingerprints)
+      : null;
+    if (!reconciledFingerprints) {
       setCameraClipReelMarker(null);
       if (pendingCameraReelStoryId === null) cameraReelAssetIdsRef.current = [];
+    } else if (JSON.stringify(reconciledFingerprints) !== JSON.stringify(cameraClipReelMarker.orderedFingerprints)) {
+      setCameraClipReelMarker({ orderedFingerprints: reconciledFingerprints });
     }
   }, [cameraClipReelMarker, files, gallerySelection, pendingCameraReelStoryId]);
   useEffect(() => {
@@ -1472,17 +1477,21 @@ export function CommunityStoryRail({
 
   const retryCameraClipStitching = async () => {
     if (!pendingCameraReelStoryId || !userId || publishing) return;
-    const cameraAssetIds = cameraReelAssetIdsRef.current;
-    if (!isValidCameraReelAssetIds(cameraAssetIds)) {
-      setError("Spark posted but stitching is pending. The saved ordered camera assets are incomplete; keep this draft and try again.");
-      return;
-    }
     const controller = new AbortController();
     publishControllerRef.current = controller;
     setPublishing(true);
     setPublishStatus("Retrying camera clip stitching…");
     setError(null);
     try {
+      let cameraAssetIds = cameraReelAssetIdsRef.current;
+      if (!isValidCameraReelAssetIds(cameraAssetIds)) {
+        const serverStatus = await getCameraClipReelStatus(pendingCameraReelStoryId, controller.signal);
+        if (!isValidCameraReelAssetIds(serverStatus.sourceMediaAssetIds)) {
+          throw new Error("The saved camera asset order could not be recovered from this Spark.");
+        }
+        cameraAssetIds = [...serverStatus.sourceMediaAssetIds];
+        cameraReelAssetIdsRef.current = cameraAssetIds;
+      }
       const retrySnapshot: ExtendedStudioDraft = {
         ...snapshotRef.current(),
         cameraReelStoryId: pendingCameraReelStoryId,
@@ -1566,14 +1575,21 @@ export function CommunityStoryRail({
 
   const onCameraVideo = (recorded: File[]) => {
     setCameraOpen(false);
+    const currentSelection = selectedStudioFiles(files, gallerySelection);
+    const existingGroupIsValid = files.length === currentSelection.length
+      && isCameraClipReelSelection(currentSelection)
+      && cameraClipReelMarker !== null
+      && JSON.stringify(cameraClipReelMarker.orderedFingerprints)
+        === JSON.stringify(currentSelection.map(studioFileFingerprint));
     const chosen = chooseStudioFiles([...files, ...recorded]).files;
-    const cameraOnlyGroup = files.length === 0
-      && isCameraClipReelSelection(recorded)
-      && chosen.length === recorded.length
-      && chosen.every((file, index) => file === recorded[index]);
+    const expectedOrder = [...currentSelection, ...recorded];
+    const cameraOnlyGroup = (files.length === 0 || existingGroupIsValid)
+      && isCameraClipReelSelection(chosen)
+      && chosen.length === expectedOrder.length
+      && chosen.every((file, index) => file === expectedOrder[index]);
     selectStudioFiles(recorded);
     setCameraClipReelMarker(cameraOnlyGroup
-      ? { orderedFingerprints: recorded.map(studioFileFingerprint) }
+      ? { orderedFingerprints: chosen.map(studioFileFingerprint) }
       : null);
   };
 
@@ -1900,7 +1916,7 @@ export function CommunityStoryRail({
                 {draftError && <p role="alert" className="mb-2 rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-xs text-amber-100">{draftError} Keep this tab open or try editing again to save.</p>}
                 {error && <p role="alert" className="mb-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
                 {checkingStudioDuration && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">Checking selected video lengths…</p>}
-                {validCameraClipReel && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">These camera-recorded clips will be stitched into one Spark video after publishing. Choosing or changing media clears this camera-only marker.</p>}
+                {validCameraClipReel && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">Camera-recorded clips will be stitched into one Spark video. Reordering or removing these clips keeps the stitch sequence; adding library media turns camera-only stitching off.</p>}
                 {pendingCameraReelStoryId !== null && <button type="button" onClick={() => void retryCameraClipStitching()} disabled={publishing} className="mb-3 min-h-10 rounded-xl border border-amber-300/50 px-4 text-xs font-bold text-amber-100 disabled:opacity-50" data-testid="button-retry-camera-reel">Retry stitching — Spark already posted</button>}
                 {publishing && publishStatus && <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs"><p>{publishStatus}{publishProgress ? ` ${publishProgress}%` : ""}</p>{publishProgress > 0 && <progress aria-label="Spark upload progress" value={publishProgress} max={100} className="mt-2 w-full" />}<button type="button" className="mt-2 min-h-10 rounded-lg border border-white/20 px-3 font-bold" onClick={() => publishControllerRef.current?.abort()}>Cancel upload</button></div>}
                 {studioStep === "destination" ? <>
