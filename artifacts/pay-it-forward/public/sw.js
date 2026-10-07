@@ -117,12 +117,17 @@ self.addEventListener("fetch", (event) => {
         fetch(request)
           .then((response) => {
             if (response && response.ok) {
-              caches
+              return caches
                 .open(CACHE_NAME)
                 .then((cache) => cache.put(request, response));
             }
           })
-          .catch(() => {});
+          .catch((error) => {
+            if (self.navigator.onLine) {
+              const reason = error instanceof Error ? error.name : "unknown error";
+              console.warn("[service-worker] Background asset refresh failed:", reason);
+            }
+          });
         return cached;
       }
 

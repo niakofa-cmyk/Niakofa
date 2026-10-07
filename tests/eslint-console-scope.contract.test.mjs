@@ -24,7 +24,7 @@ test("keeps console warnings in app code and limits the ops exception to the buc
   assert.equal(unrelatedOpsRule[0], 1, "other ops scripts must not inherit the helper exception");
 });
 
-test("rejects empty promise catch callbacks in API, Nia, and frontend code", async () => {
+test("rejects empty promise catch callbacks in API, Nia, frontend, and service worker code", async () => {
   const arrowResult = await eslint.lintText("Promise.resolve().catch(() => {});", {
     filePath: path.join(root, "artifacts/api-server/src/__empty_catch_fixture__.ts"),
   });
@@ -33,6 +33,9 @@ test("rejects empty promise catch callbacks in API, Nia, and frontend code", asy
   });
   const frontendResult = await eslint.lintText("Promise.resolve().catch(() => {});", {
     filePath: path.join(root, "artifacts/pay-it-forward/src/__empty_catch_fixture__.tsx"),
+  });
+  const serviceWorkerResult = await eslint.lintText("Promise.resolve().catch(() => {});", {
+    filePath: path.join(root, "artifacts/pay-it-forward/public/__empty_catch_fixture__.js"),
   });
   const apiBareCatchResult = await eslint.lintText("try { throw new Error('fixture'); } catch {}", {
     filePath: path.join(root, "artifacts/api-server/src/__empty_catch_fixture__.ts"),
@@ -55,6 +58,10 @@ test("rejects empty promise catch callbacks in API, Nia, and frontend code", asy
   assert.ok(
     frontendResult[0].messages.some((message) => message.ruleId === "no-restricted-syntax"),
     "frontend empty arrow catch callbacks must be reported",
+  );
+  assert.ok(
+    serviceWorkerResult[0].messages.some((message) => message.ruleId === "no-restricted-syntax"),
+    "service worker empty arrow catch callbacks must be reported",
   );
   for (const [result, area] of [
     [apiBareCatchResult, "API"],
