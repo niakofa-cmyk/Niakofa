@@ -15,6 +15,7 @@ import {
 
 const component = readFileSync(new URL("../StoryCameraRecorder.tsx", import.meta.url), "utf8");
 const storyRail = readFileSync(new URL("../CommunityStoryRail.tsx", import.meta.url), "utf8");
+const storyVisualCss = readFileSync(new URL("../community-story-visual.css", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../../../App.tsx", import.meta.url), "utf8");
 
 test("camera constraints default to front-facing and can request the other camera", () => {
@@ -27,7 +28,8 @@ test("camera constraints default to front-facing and can request the other camer
     audio: false,
   });
   assert.match(component, /useState<StoryCameraFacingMode>\("user"\)/);
-  assert.match(component, /void startCamera\(\);\s*\/\/ Camera acquisition is intentionally started as soon as the choice mounts/);
+  assert.match(component, /const \[cameraSetupOpen, setCameraSetupOpen\] = useState\(false\)/);
+  assert.doesNotMatch(component, /useEffect\(\(\) => \{\s*void startCamera\(\);/);
 });
 
 test("camera keeps each clip within a Moment and allows a longer Spark for Family Stories", () => {
@@ -46,7 +48,7 @@ test("recording keeps one camera session and degrades safely when microphone acc
   assert.match(component, /phase === "camera" \|\| phase === "countdown" \|\| phase === "recording" \|\| phase === "paused"/);
   assert.doesNotMatch(component, /if \(video\.srcObject === streamRef\.current\) video\.srcObject = null/);
   assert.doesNotMatch(component, /getUserMedia\(\{ audio: true \}\)/);
-  const startCamera = component.slice(component.indexOf("const startCamera"), component.indexOf("useEffect(() => {\n    void startCamera"));
+  const startCamera = component.slice(component.indexOf("const startCamera"), component.indexOf("const openCameraSetup"));
   const beginRecording = component.slice(component.indexOf("const beginRecording"), component.indexOf("const startRecording"));
   assert.match(startCamera, /getUserMedia\(\{ \.\.\.constraints, audio: true \}\)/);
   assert.match(startCamera, /A microphone denial must not block video-only recording/);
@@ -57,6 +59,20 @@ test("recording keeps one camera session and degrades safely when microphone acc
   assert.match(beginRecording, /new MediaStream\(\[\.\.\.recordingStream\.getVideoTracks\(\), \.\.\.audioTracks\]\)/);
   assert.match(component, /new MediaRecorder\(recorderInput, \{ mimeType \}\)/);
   assert.match(component, /status-spark-microphone/);
+});
+
+test("camera and microphone access wait for explicit confirmation", () => {
+  assert.match(component, /const confirmCameraSetup = \(\) => \{\s*cameraPermissionConfirmedRef\.current = true;\s*setCameraSetupOpen\(false\);\s*void startCamera\(\);/);
+  assert.match(component, /data-testid="button-confirm-spark-camera"/);
+  assert.match(component, /data-testid="button-setup-spark-camera"/);
+  assert.match(component, /data-testid="button-choose-media-instead"/);
+  assert.match(component, /Your camera stays off until you choose to open it/);
+});
+
+test("Spark Studio editor fills the viewport at desktop and mobile sizes", () => {
+  const fullscreenStyles = storyVisualCss.slice(storyVisualCss.indexOf("/* Spark Studio fills the viewport"));
+  assert.match(fullscreenStyles, /\.nia-story-composer-shell\s*\{[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100dvh;[\s\S]*?border-radius:\s*0;/);
+  assert.match(fullscreenStyles, /\.nia-story-composer-shell\s*>\s*\.nia-story-composer\s*\{[\s\S]*?flex:\s*1 1 auto;/);
 });
 
 test("camera permission and device errors are explained without relying on DOMException support", () => {

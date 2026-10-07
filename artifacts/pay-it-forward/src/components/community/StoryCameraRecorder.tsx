@@ -1,4 +1,4 @@
-import { Flashlight, ImagePlus, Pause, Play, RotateCcw, SwitchCamera, Timer, Type, X } from "lucide-react";
+import { ArrowRight, Camera, Flashlight, ImagePlus, LockKeyhole, Pause, Play, RotateCcw, ShieldCheck, SwitchCamera, Timer, Type, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   STORY_CAMERA_CLIP_MAX_MS,
@@ -42,6 +42,8 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const cameraSetupContinueRef = useRef<HTMLButtonElement>(null);
+  const shutterButtonRef = useRef<HTMLButtonElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordingAudioRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -56,6 +58,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   const videoDurationByFileRef = useRef(new Map<File, number>());
   const phaseRef = useRef<"idle" | "camera" | "countdown" | "recording" | "paused" | "preview">("idle");
   const photoCapturePendingRef = useRef(false);
+  const cameraPermissionConfirmedRef = useRef(false);
   const clipsRef = useRef<File[]>([]);
   const fileRef = useRef<File | null>(null);
   const cancelledRef = useRef(false);
@@ -65,6 +68,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [phase, setPhase] = useState<"idle" | "camera" | "countdown" | "recording" | "paused" | "preview">("idle");
+  const [cameraSetupOpen, setCameraSetupOpen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [clips, setClips] = useState<File[]>([]);
@@ -124,6 +128,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   const stopForInterruption = () => {
     requestIdRef.current += 1;
     setCameraSwitching(false);
+    setCameraSetupOpen(false);
     clearTimer();
     clearCountdown();
     const recorder = recorderRef.current;
@@ -296,11 +301,34 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     }
   };
 
-  useEffect(() => {
+  const openCameraSetup = () => {
+    if (cameraRequesting) return;
+    setError("");
+    if (cameraPermissionConfirmedRef.current) {
+      void startCamera();
+      return;
+    }
+    setCameraSetupOpen(true);
+  };
+  const closeCameraSetup = () => {
+    setCameraSetupOpen(false);
+    window.requestAnimationFrame(() => shutterButtonRef.current?.focus());
+  };
+  const confirmCameraSetup = () => {
+    cameraPermissionConfirmedRef.current = true;
+    setCameraSetupOpen(false);
     void startCamera();
-    // Camera acquisition is intentionally started as soon as the choice mounts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  };
+  const chooseMediaInstead = () => {
+    setCameraSetupOpen(false);
+    onGallery();
+  };
+
+  useEffect(() => {
+    if (!cameraSetupOpen) return;
+    const frame = window.requestAnimationFrame(() => cameraSetupContinueRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [cameraSetupOpen]);
 
   const beginRecording = async () => {
     const stream = streamRef.current;
@@ -477,6 +505,15 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
       setPhase("preview");
     }, "image/jpeg", 0.92);
   };
+  const handleShutter = () => {
+    if (phase === "idle") {
+      openCameraSetup();
+      return;
+    }
+    if (phase !== "camera") return;
+    if (captureMode === "photo") capturePhoto();
+    else startRecording();
+  };
 
   const pause = () => {
     const recorder = recorderRef.current;
@@ -634,6 +671,7 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
   const cancel = () => {
     cancelledRef.current = true;
     requestIdRef.current += 1;
+    setCameraSetupOpen(false);
     clearTimer();
     clearCountdown();
     setCameraSwitching(false);
@@ -666,25 +704,87 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
     ? `Preview ${clips.length} of ${MAX_ITEMS} clip${clips.length === 1 ? "" : "s"} · ${Math.ceil(recordedVideoMs / 1000)} / ${capSeconds} video seconds recorded · ${Math.max(0, Math.ceil((MAX_RECORDING_MS - recordedVideoMs) / 1000))} seconds remaining`
     : recordingStatus}`;
 
-  return <div className={`nia-spark-camera fixed inset-0 z-[120] h-[100dvh] w-screen overflow-hidden bg-[#08182b] text-white ${phase === "preview" ? "nia-spark-camera--playback flex flex-col" : ""}`} role="dialog" aria-modal="true" aria-label="Spark camera" data-testid="dialog-spark-camera">
-    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#08182b]">
-      <header className="nia-spark-camera__bar absolute inset-x-0 top-0 z-10 flex items-start justify-between px-3 pt-[max(12px,env(safe-area-inset-top))]">
-        <button type="button" onClick={cancel} aria-label="Cancel camera" className="nia-spark-camera__glass focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00cfff]" data-testid="button-cancel-spark-camera"><X aria-hidden="true" /></button>
-        <div className="rounded-full bg-[#08182b]/70 px-3 py-1 text-sm font-semibold tabular-nums text-[#00cfff]">{totalSeconds}s / {capSeconds}s</div>
-        {clips.length > 0 ? (
-          <button type="button" onClick={() => onUse(clips)} className="rounded-full bg-[#00cfff] px-4 py-2 text-sm font-extrabold text-[#08182b]" data-testid="button-use-spark-camera">Next</button>
-        ) : <span className="w-11" />}
+  return <div className={`nia-spark-camera fixed inset-0 z-[120] h-[100dvh] w-screen overflow-hidden bg-[#193d3b] text-[#f7f5eb] ${phase === "preview" ? "nia-spark-camera--playback flex flex-col" : ""}`} role="dialog" aria-modal="true" aria-label="Spark camera" data-testid="dialog-spark-camera">
+    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#193d3b]">
+      <header className="nia-spark-camera__bar absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 px-3 pt-[max(12px,env(safe-area-inset-top))]">
+        <button type="button" onClick={cancel} aria-label="Cancel camera" className="nia-spark-camera__glass focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e5c66b]" data-testid="button-cancel-spark-camera"><X aria-hidden="true" /></button>
+        <div className="nia-spark-camera__brand" aria-label="Spark Studio">
+          <span className="nia-spark-camera__brand-mark" aria-hidden="true">N</span>
+          <span><strong>Spark Studio</strong><small>{phase === "preview" ? "Review your capture" : "A moment for your neighbors"}</small></span>
+        </div>
+        <div className="nia-spark-camera__header-actions">
+          <div className="nia-spark-camera__duration" aria-label={`${totalSeconds} of ${capSeconds} seconds recorded`}>{totalSeconds}s / {capSeconds}s</div>
+          {clips.length > 0 && (
+            <button type="button" onClick={() => onUse(clips)} className="nia-spark-camera__next" data-testid="button-use-spark-camera">Next <ArrowRight aria-hidden="true" className="h-4 w-4" /></button>
+          )}
+        </div>
       </header>
 
       <div className="nia-spark-camera__stage absolute inset-0 bg-black">
         {phase !== "preview" && <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-cover" aria-label="Live Spark camera preview" />}
+        {phase === "idle" && !cameraRequesting && !cameraSetupOpen && (
+          <div className="nia-spark-camera__off-state" role="status" data-testid="status-spark-camera-off">
+            <span className="nia-spark-camera__off-icon"><Camera aria-hidden="true" /></span>
+            <span className="nia-spark-camera__eyebrow">Your choice, always</span>
+            <h1>Your viewfinder is ready.</h1>
+            <p>Your camera stays off until you choose to open it. Tap the shutter when you’re ready.</p>
+            <span className="nia-spark-camera__privacy-note"><ShieldCheck aria-hidden="true" /> Only your selected neighbors can see this Spark.</span>
+          </div>
+        )}
+        {phase === "idle" && cameraRequesting && (
+          <div className="nia-spark-camera__off-state" role="status" aria-live="polite">
+            <span className="nia-spark-camera__off-icon"><Camera aria-hidden="true" /></span>
+            <h1>Opening your camera…</h1>
+            <p>Your camera preview will appear here.</p>
+          </div>
+        )}
+        {cameraSetupOpen && (
+          <div className="nia-spark-camera__consent-scrim">
+            <section
+              className="nia-spark-camera__consent-card"
+              role="group"
+              aria-labelledby="spark-camera-consent-title"
+              aria-describedby="spark-camera-consent-copy"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  closeCameraSetup();
+                  return;
+                }
+                if (event.key === "Tab") {
+                  event.stopPropagation();
+                  const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
+                  const first = controls[0];
+                  const last = controls[controls.length - 1];
+                  if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last?.focus();
+                  } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first?.focus();
+                  }
+                }
+              }}
+            >
+              <button type="button" onClick={closeCameraSetup} className="nia-spark-camera__consent-close" aria-label="Close camera setup"><X aria-hidden="true" /></button>
+              <span className="nia-spark-camera__consent-icon"><Camera aria-hidden="true" /></span>
+              <span className="nia-spark-camera__eyebrow">Your choice, always</span>
+              <h2 id="spark-camera-consent-title">Ready to use your camera?</h2>
+              <p id="spark-camera-consent-copy">Continuing requests camera and microphone access. If microphone access is unavailable, you can still take photos or record silent video.</p>
+              <span className="nia-spark-camera__consent-privacy"><LockKeyhole aria-hidden="true" /> You can choose media from your device instead.</span>
+              <button ref={cameraSetupContinueRef} type="button" onClick={confirmCameraSetup} className="nia-spark-camera__consent-primary" data-testid="button-confirm-spark-camera">Continue to camera <ArrowRight aria-hidden="true" /></button>
+              <button type="button" onClick={chooseMediaInstead} className="nia-spark-camera__consent-secondary" data-testid="button-choose-media-instead">Choose media instead <ImagePlus aria-hidden="true" /></button>
+            </section>
+          </div>
+        )}
         {phase === "preview" && file && previewUrl && (file.type.startsWith("video/")
           ? <>
             <video ref={previewVideoRef} key={previewUrl} src={previewUrl} playsInline controls preload="auto" onPlay={() => { setError(""); setPreviewPlaying(true); }} onPause={() => setPreviewPlaying(false)} onEnded={() => setPreviewPlaying(false)} onError={(event) => { const video = event.currentTarget; if (video.error?.code === 1 || !previewUrlRef.current || (video.currentSrc && video.currentSrc !== previewUrlRef.current)) return; setError("The recorded clip preview could not be loaded. Retake it or choose another video."); }} className="h-full w-full bg-black object-contain" aria-label="Recorded Spark video preview" data-testid="video-spark-recorded-preview" />
-            {!previewPlaying && <button type="button" onClick={togglePreviewPlayback} aria-label="Play recording" className="absolute left-1/2 top-1/2 z-10 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[#00cfff] text-[#08182b]" data-testid="button-play-spark-preview"><Play aria-hidden="true" className="h-7 w-7" /></button>}
+            {!previewPlaying && <button type="button" onClick={togglePreviewPlayback} aria-label="Play recording" className="absolute left-1/2 top-1/2 z-10 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[#e5c66b] text-[#193c3b]" data-testid="button-play-spark-preview"><Play aria-hidden="true" className="h-7 w-7" /></button>}
           </>
           : <img src={previewUrl} alt="Captured Spark photo preview" className="h-full w-full object-contain" />)}
-        {phase === "countdown" && <span className="absolute inset-0 z-10 grid place-items-center text-8xl font-bold text-[#00cfff]" aria-live="assertive">{countdown}</span>}
+        {phase === "countdown" && <span className="absolute inset-0 z-10 grid place-items-center text-8xl font-bold text-[#e5c66b]" aria-live="assertive">{countdown}</span>}
       </div>
 
       {overFamilyStory && <p className="nia-spark-camera__family" data-testid="status-spark-family-story-length">Family Story length — you can archive this</p>}
@@ -707,20 +807,21 @@ export function StoryCameraRecorder({ onUse, onCancel, onGallery, onText, allowT
         {micUnavailable && phase !== "preview" && <p className="mb-2 text-center text-xs text-white/75" role="status" data-testid="status-spark-microphone">Microphone unavailable — video will record without sound.</p>}
         {phase === "idle" && (cameraRequesting
           ? <p role="status" aria-live="polite" className="mb-3 text-center text-sm text-white/80">Opening camera…</p>
-          : <button type="button" onClick={() => void startCamera()} className="mb-3 rounded-full bg-[#00cfff] px-5 py-3 font-bold text-[#08182b]" data-testid="button-retry-spark-camera">Try camera again</button>)}
+          : error && <button type="button" onClick={openCameraSetup} className="mb-3 rounded-full px-5 py-3 font-bold" data-testid="button-retry-spark-camera">Try camera again</button>)}
         {(phase === "camera" || phase === "idle") && (
           <div className="mb-4 flex justify-center gap-6 text-xs font-bold uppercase tracking-[0.16em]">
-            <button type="button" onClick={() => setCaptureMode("video")} className={captureMode === "video" ? "text-[#00cfff]" : "text-white/55"}>Video</button>
-            <button type="button" onClick={() => setCaptureMode("photo")} className={captureMode === "photo" ? "text-[#00cfff]" : "text-white/55"}>Photo</button>
+            <button type="button" onClick={() => setCaptureMode("video")} aria-pressed={captureMode === "video"} className={captureMode === "video" ? "text-[#e5c66b]" : "text-white/70"}>Video</button>
+            <button type="button" onClick={() => setCaptureMode("photo")} aria-pressed={captureMode === "photo"} className={captureMode === "photo" ? "text-[#e5c66b]" : "text-white/70"}>Photo</button>
           </div>
         )}
         <div className="grid grid-cols-[1fr_auto_1fr] items-center">
           <div className="flex items-center gap-2">
-            <button type="button" className="nia-spark-camera__glass" onClick={onGallery} data-testid="button-spark-camera-gallery" aria-label="Open gallery"><ImagePlus aria-hidden="true" className="h-5 w-5" /></button>
+            <button type="button" className="nia-spark-camera__gallery-choice" onClick={onGallery} data-testid="button-spark-camera-gallery" aria-label="Choose media from this device"><span><ImagePlus aria-hidden="true" className="h-5 w-5" /></span><span>Choose media<small>From this device</small></span></button>
           </div>
           <div className="flex flex-col items-center gap-2">
-            {phase === "camera" && captureMode === "photo" && <button type="button" onClick={capturePhoto} disabled={cameraSwitching || clips.length >= MAX_ITEMS} aria-label="Capture Spark photo" className="nia-spark-camera__record" data-testid="button-capture-spark-photo"><i /></button>}
-            {phase === "camera" && captureMode === "video" && <button type="button" onClick={startRecording} disabled={cameraSwitching || recordedVideoMs >= MAX_RECORDING_MS || clips.length >= MAX_ITEMS} aria-label="Record Spark video" className="nia-spark-camera__record" data-testid="button-record-spark-video"><i /></button>}
+            {phase === "idle" && <button ref={shutterButtonRef} type="button" onClick={handleShutter} disabled={cameraRequesting} aria-label="Set up Spark camera" className="nia-spark-camera__record nia-spark-camera__record--setup" data-testid="button-setup-spark-camera"><Camera aria-hidden="true" className="h-6 w-6" /></button>}
+            {phase === "camera" && captureMode === "photo" && <button type="button" onClick={handleShutter} disabled={cameraSwitching || clips.length >= MAX_ITEMS} aria-label="Capture Spark photo" className="nia-spark-camera__record" data-testid="button-capture-spark-photo"><i /></button>}
+            {phase === "camera" && captureMode === "video" && <button type="button" onClick={handleShutter} disabled={cameraSwitching || recordedVideoMs >= MAX_RECORDING_MS || clips.length >= MAX_ITEMS} aria-label="Record Spark video" className="nia-spark-camera__record" data-testid="button-record-spark-video"><i /></button>}
             {(phase === "recording" || phase === "paused") && (
               <div className="flex items-center gap-3">
                 <button type="button" onClick={phase === "recording" ? pause : resume} aria-label={phase === "recording" ? "Pause recording" : "Resume recording"} className="nia-spark-camera__glass" data-testid={phase === "recording" ? "button-pause-spark-camera" : "button-resume-spark-camera"}>{phase === "recording" ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}</button>
