@@ -172,3 +172,9 @@ The bound GitHub connector has previously truncated Git Data API blob requests f
 **Why:** A successful 201 response is not proof that the full blob arrived; prior truncated uploads produced a different SHA even when the remote branch was untouched. More recent larger uploads happened to match, but do not remove this gate.
 
 **How to apply:** Upload sequentially, compare every returned blob SHA, and stop at the first mismatch. Use a transport with full Git object support for large generated artifacts rather than publishing a partial tree.
+
+When the local commit message ends in LF, include that final newline in the Git Data API `message` payload. The API response's visible `message` does not reveal whether the raw commit object retained it.
+
+**Why:** A candidate with matching tree, parent, identities, and timestamps still had a different SHA when the payload omitted the local message's final newline; preserving it produced the exact local SHA.
+
+**How to apply:** Preserve the committed message bytes, encode the final LF in the JSON payload when present, and require the returned commit SHA to equal local `HEAD` before updating the ref.
