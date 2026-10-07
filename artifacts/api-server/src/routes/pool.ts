@@ -523,13 +523,9 @@ router.post("/pool/donate", paymentLimiter, async (req, res) => {
 
 /**
  * GET /admin/pool/stripe-balance
- * Compares the actual Stripe platform balance against the Community Pool ledger
- * sum so admins can detect drift between the accounting system and held funds.
- *
- * Pending funds are diagnostic only. The spendable comparison uses Stripe's
- * available balance, matching the daily drift monitor; a large gap may indicate
- * a ledger bug, a missed webhook, fees, or a reconciliation error.
- * The endpoint logs a structured warning when gap > $10.
+ * Shows account-level Stripe balances as context only. The platform balance
+ * includes non-pool funds and cannot be reconciled against the pool ledger sum.
+ * Use the PaymentIntent-level audit for actual Stripe-backed pool records.
  */
 router.get("/admin/pool/stripe-balance", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
   try {
@@ -540,14 +536,15 @@ router.get("/admin/pool/stripe-balance", requireAuth, requireAdmin(), adminLimit
       return res.json({
         stripe_configured: false,
         ledger_balance: ledgerBalance,
+        comparison_comparable: false,
         message: "Stripe is not configured — real-time balance check unavailable.",
       });
     }
 
     const stripeBalance = await _stripe.balance.retrieve();
 
-    // "available" is immediately spendable. Pending funds are reported
-    // separately and must not make the ledger appear reconciled.
+    // Report available and pending balances separately as account-level
+    // context only; neither amount is pool-specific.
     const available = stripeBalance.available
       .filter(b => b.currency === "usd")
       .reduce((s, b) => s + b.amount, 0) / 100;
@@ -556,15 +553,7 @@ router.get("/admin/pool/stripe-balance", requireAuth, requireAdmin(), adminLimit
       .filter(b => b.currency === "usd")
       .reduce((s, b) => s + b.amount, 0) / 100;
 
-    const drift = Math.abs(available - ledgerBalance);
-    const driftAlert = drift > 10; // alert threshold: $10
-
-    if (driftAlert) {
-      logger.warn(
-        { stripe_available: available, stripe_pending: pending, ledger_balance: ledgerBalance, drift },
-        "pool/stripe-balance: spendable ledger vs Stripe available drift exceeds $10 — review reconciliation"
-      );
-    }
+    const accountLevelDifference = Math.round(Math.abs(available - ledgerBalance) * 100) / 100;
 
     return res.json({
       stripe_configured: true,
@@ -572,11 +561,11 @@ router.get("/admin/pool/stripe-balance", requireAuth, requireAdmin(), adminLimit
       stripe_pending: pending,
       stripe_total: available + pending,
       ledger_balance: ledgerBalance,
-      drift,
-      drift_alert: driftAlert,
-      message: driftAlert
-        ? `⚠️ Ledger/Stripe gap is ${drift.toFixed(2)} — review pool ledger or Stripe dashboard.`
-        : `✓ Ledger and Stripe are within $10 (gap: ${drift.toFixed(2)}).`,
+      account_level_difference: accountLevelDifference,
+      comparison_comparable: false,
+      transaction_reconciliation_endpoint: "/api/pool/stripe/reconciliation",
+      message:
+        "Diagnostic only: the platform Stripe balance includes non-pool funds and is not comparable to the Community Pool ledger. Use transaction-level reconciliation.",
     });
   } catch (err) {
     logger.error({ err }, "Failed to retrieve Stripe balance for pool reconciliation");

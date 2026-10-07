@@ -31,16 +31,19 @@ describe("session revocation and spendable pool reconciliation contracts", () =>
     expect(wsHub).toMatch(/tokenVersion !== undefined && tokenVersion === currentUser\.token_version/);
   });
 
-  it("compares the admin balance endpoint with Stripe available funds", async () => {
+  it("keeps platform balance diagnostics separate from pool transaction reconciliation", async () => {
     const [pool, drift] = await Promise.all([
       fs.readFile(poolPath, "utf8"),
       fs.readFile(driftPath, "utf8"),
     ]);
 
     const endpoint = pool.slice(pool.indexOf('router.get("/admin/pool/stripe-balance"'));
-    expect(endpoint).toMatch(/const drift = Math\.abs\(available - ledgerBalance\)/);
+    expect(endpoint).toMatch(/comparison_comparable: false/);
+    expect(endpoint).toMatch(/account_level_difference: accountLevelDifference/);
+    expect(endpoint).not.toMatch(/driftAlert|drift_alert/);
     expect(endpoint).toMatch(/stripe_total: available \+ pending/);
-    expect(drift).toMatch(/stripeAvailableCents/);
-    expect(drift).toMatch(/Pending Stripe funds are separate/);
+    expect(drift).toMatch(/scanRecentPoolContributions/);
+    expect(drift).toMatch(/missing_financial_event_count/);
+    expect(drift).not.toMatch(/stripe\.balance\.retrieve/);
   });
 });

@@ -7029,25 +7029,49 @@ function SystemTab() {
 interface AdminCommunity {
   id: number;
   name: string;
+  county?: string | null;
+  state?: string | null;
+  is_county_pool?: boolean;
   target_reserve_amount: number;
   /** Per-county livable-wage override ($/hr). Null = inherits the global platform rate. */
   hourly_rate?: number | null;
-  /** Server-computed pool health, clamped [0.5, 1.0] — matches wage multiplier floor */
-  pool_health_ratio?: number;
   created_at: string;
   member_count?: number;
   pool_balance?: number;
+  active_user_count?: number;
+  active_helper_count?: number;
+  pending_minimums_count?: number;
+  pending_minimums_total?: number;
+  readiness_status?: "unpaid_minimums_queued" | "empty" | "below_target" | "ready" | "unscoped" | "inactive";
 }
 
 function CommunitiesTab() {
   const [communities, setCommunities] = useState<AdminCommunity[]>([]);
-  const [unassigned, setUnassigned] = useState<{ pool_balance: number; member_count: number } | null>(null);
+  const [unassigned, setUnassigned] = useState<{
+    pool_balance: number;
+    member_count: number;
+    active_user_count: number;
+    active_helper_count: number;
+    missing_community_active_user_count: number;
+    unscoped_community_active_user_count: number;
+    pending_minimums_count: number;
+    pending_minimums_total: number;
+    missing_community_pending_minimums_count: number;
+    unscoped_community_pending_minimums_count: number;
+    missing_community_member_count: number;
+    missing_community_pool_balance: number;
+    unscoped_community_member_count: number;
+    unscoped_community_pool_balance: number;
+  } | null>(null);
+  const [activeWindowDays, setActiveWindowDays] = useState(30);
   const [defaultCommunityId, setDefaultCommunityId] = useState<number | null>(null);
   const [settingDefault, setSettingDefault] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | "new" | null>(null);
   const [editing, setEditing] = useState<number | "new" | null>(null);
-  const [form, setForm] = useState({ name: "", target_reserve_amount: "5000", hourly_rate: "" });
+  const [form, setForm] = useState({ name: "", target_reserve_amount: "10000", hourly_rate: "" });
+  const [newCounty, setNewCounty] = useState("");
+  const [newState, setNewState] = useState("");
   const [reassignUserId, setReassignUserId] = useState("");
   const [reassignCommunityId, setReassignCommunityId] = useState("");
   const [reassignMsg, setReassignMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -7070,6 +7094,7 @@ function CommunitiesTab() {
         setCommunities(j.communities ?? []);
         hasLoadedRef.current = true;
         setUnassigned(j.unassigned ?? null);
+        setActiveWindowDays(Number(j.active_window_days) || 30);
         if (j.default_community_id != null) setDefaultCommunityId(j.default_community_id);
       }
     } finally {
@@ -7115,7 +7140,9 @@ function CommunitiesTab() {
   }, [reassignUserId]);
 
   const openNew = () => {
-    setForm({ name: "", target_reserve_amount: "5000", hourly_rate: "" });
+    setForm({ name: "", target_reserve_amount: "10000", hourly_rate: "" });
+    setNewCounty("");
+    setNewState("");
     setEditing("new");
   };
 
@@ -7129,6 +7156,12 @@ function CommunitiesTab() {
   };
 
   const saveNew = async () => {
+    const county = newCounty.trim();
+    const state = newState.trim();
+    if (Boolean(county) !== Boolean(state)) {
+      toast({ title: "County scope is incomplete", description: "Enter both a county and a state, or leave both blank.", variant: "destructive" });
+      return;
+    }
     setSaving("new");
     try {
       const trimmedRate = form.hourly_rate.trim();
@@ -7137,8 +7170,9 @@ function CommunitiesTab() {
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
         body: JSON.stringify({
           name: form.name.trim(),
-          target_reserve_amount: parseFloat(form.target_reserve_amount) || 5000,
+          target_reserve_amount: parseFloat(form.target_reserve_amount) || 10000,
           ...(trimmedRate ? { hourly_rate: parseFloat(trimmedRate) } : {}),
+          ...(county && state ? { county, state } : {}),
         }),
       });
       if (res.ok) {
@@ -7287,10 +7321,10 @@ function CommunitiesTab() {
     </div>
   );
 
-  const healthColor = (ratio: number) =>
-    ratio >= 0.9 ? "text-green-400" : ratio >= 0.7 ? "text-yellow-400" : "text-orange-400";
-  const healthLabel = (ratio: number) =>
-    ratio >= 0.9 ? "Fully Funded" : ratio >= 0.7 ? "Healthy" : "Building";
+  const fundingColor = (fundingRatio: number) =>
+    fundingRatio >= 1 ? "text-green-400" : "text-yellow-400";
+  const fundingLabel = (fundingRatio: number) =>
+    fundingRatio >= 1 ? "Target reached" : "Building toward target";
 
   return (
     <div className="space-y-4">
@@ -7306,10 +7340,46 @@ function CommunitiesTab() {
           onClick={openNew}
           style={{ touchAction: "manipulation" }}
           className="text-[11px] font-black px-3 py-2 rounded-xl bg-primary text-primary-foreground active:opacity-80"
+          data-testid="button-create-community"
         >
           + New
         </button>
       </div>
+
+      {/* Active-county readiness summary. AMBER is a funding goal; queued
+          minimums and empty active pools are the urgent cases. */}
+      {(() => {
+        const activeCommunities = communities.filter(c => c.is_county_pool && (c.active_user_count ?? 0) > 0);
+        const urgentCommunities = communities.filter(c =>
+          c.readiness_status === "unpaid_minimums_queued" ||
+          c.readiness_status === "empty" ||
+          c.readiness_status === "unscoped"
+        );
+        const belowTargetCommunities = activeCommunities.filter(c => c.readiness_status === "below_target");
+        const statusCards = [
+          { label: "Active pools", value: activeCommunities.length, color: "text-foreground" },
+          { label: "Urgent", value: urgentCommunities.length, color: "text-rose-300" },
+          { label: "Below target", value: belowTargetCommunities.length, color: "text-amber-300" },
+          { label: "Active users without a county pool", value: unassigned?.active_user_count ?? 0, color: "text-rose-300" },
+        ];
+        return (
+          <section className="rounded-2xl border border-border bg-card p-3 space-y-2" aria-label="County pool readiness">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {statusCards.map(card => (
+                <div key={card.label} className="rounded-xl bg-background/70 px-3 py-2">
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{card.label}</div>
+                  <div className={`text-lg font-black tabular-nums ${card.color}`} data-testid={`pool-readiness-${card.label.toLowerCase().replaceAll(" ", "-")}`}>
+                    {card.value.toLocaleString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              Active means a location update in the last {activeWindowDays} days. RED means queued unpaid minimums, an empty active county pool, or active users without county scope; AMBER means below the reserve target and is a funding goal, not an immediate failure.
+            </p>
+          </section>
+        );
+      })()}
 
       {/* Create / Edit form */}
       <AnimatePresence>
@@ -7330,17 +7400,53 @@ function CommunitiesTab() {
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 style={{ fontSize: "16px" }}
                 className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                data-testid="input-community-name"
               />
+              {editing === "new" && (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
+                      County (optional)
+                    </label>
+                    <input
+                      value={newCounty}
+                      onChange={e => setNewCounty(e.target.value)}
+                      placeholder="Tarrant"
+                      style={{ fontSize: "16px" }}
+                      className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                      data-testid="input-new-community-county"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
+                      State (optional)
+                    </label>
+                    <input
+                      value={newState}
+                      onChange={e => setNewState(e.target.value)}
+                      placeholder="TX"
+                      maxLength={32}
+                      style={{ fontSize: "16px" }}
+                      className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                      data-testid="input-new-community-state"
+                    />
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground sm:col-span-2">
+                    Enter both fields to scope this pool to a county. Leave both blank only for an intentionally unscoped community.
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">Target Reserve ($)</label>
                 <input
                   type="number"
                   min="0"
-                  placeholder="5000"
+                  placeholder="10000"
                   value={form.target_reserve_amount}
                   onChange={e => setForm(f => ({ ...f, target_reserve_amount: e.target.value }))}
                   style={{ fontSize: "16px" }}
                   className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                  data-testid="input-community-target-reserve"
                 />
               </div>
               <div>
@@ -7356,6 +7462,7 @@ function CommunitiesTab() {
                   onChange={e => setForm(f => ({ ...f, hourly_rate: e.target.value }))}
                   style={{ fontSize: "16px" }}
                   className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                  data-testid="input-community-hourly-rate"
                 />
                 <div className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
                   This is the guaranteed minimum helpers in this county earn for timed tasks, scaled
@@ -7369,6 +7476,7 @@ function CommunitiesTab() {
                 onClick={() => setEditing(null)}
                 style={{ touchAction: "manipulation" }}
                 className="flex-1 py-2.5 text-xs font-black rounded-xl bg-muted border border-border text-muted-foreground active:opacity-70"
+                data-testid="button-cancel-community"
               >
                 Cancel
               </button>
@@ -7377,6 +7485,7 @@ function CommunitiesTab() {
                 disabled={!form.name.trim() || saving !== null}
                 style={{ touchAction: "manipulation" }}
                 className="flex-1 py-2.5 text-xs font-black rounded-xl bg-primary text-primary-foreground disabled:opacity-50 active:opacity-80"
+                data-testid="button-save-community"
               >
                 {saving !== null ? "Saving…" : "Save"}
               </button>
@@ -7396,11 +7505,37 @@ function CommunitiesTab() {
         {communities.map(c => {
           const balance = c.pool_balance ?? 0;
           const target = c.target_reserve_amount || 1;
-          // Use the server-computed ratio (clamped [0.5,1.0] matching wage-multiplier floor).
-          // Fall back to raw ratio only if the API field is absent.
-          const ratio = c.pool_health_ratio ?? Math.min(Math.max(0.5, balance / target), 1);
-          const pct = Math.round(ratio * 100);
+          // Readiness progress uses the full balance/target ratio. The API's
+          // separately clamped wage multiplier is intentionally not used here.
+          const fundingRatio = target > 0 ? Math.min(1, Math.max(0, balance / target)) : 0;
+          const pct = Math.round(fundingRatio * 100);
           const isDefault = c.id === defaultCommunityId;
+          const readiness = {
+            unpaid_minimums_queued: {
+              label: "RED · helpers waiting",
+              className: "border-rose-500/40 bg-rose-500/10 text-rose-300",
+            },
+            empty: {
+              label: "RED · empty pool",
+              className: "border-rose-500/40 bg-rose-500/10 text-rose-300",
+            },
+            below_target: {
+              label: "AMBER · below target",
+              className: "border-amber-500/40 bg-amber-500/10 text-amber-300",
+            },
+            unscoped: {
+              label: "RED · no county pool",
+              className: "border-rose-500/40 bg-rose-500/10 text-rose-300",
+            },
+            ready: {
+              label: "GREEN · at target",
+              className: "border-green-500/40 bg-green-500/10 text-green-300",
+            },
+            inactive: {
+              label: "No active users",
+              className: "border-border bg-muted text-muted-foreground",
+            },
+          }[c.readiness_status ?? "inactive"];
           return (
             <div key={c.id} className="bg-card border border-border rounded-2xl p-4 space-y-3">
               <div className="flex items-start justify-between gap-2">
@@ -7419,9 +7554,12 @@ function CommunitiesTab() {
                         Global rate
                       </span>
                     )}
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${readiness.className}`} data-testid={`status-pool-readiness-${c.id}`}>
+                      {readiness.label}
+                    </span>
                   </div>
                   <div className="text-[10px] text-muted-foreground mt-1">
-                    ID #{c.id} · {(c.member_count ?? 0).toLocaleString()} members · Created {new Date(c.created_at).toLocaleDateString()}
+                    ID #{c.id} · {c.county && c.state ? `${c.county}, ${c.state} · ` : "No county scope · "}{(c.member_count ?? 0).toLocaleString()} members · {Number(c.active_user_count ?? 0).toLocaleString()} active · {Number(c.active_helper_count ?? 0).toLocaleString()} helpers · Created {new Date(c.created_at).toLocaleDateString()}
                   </div>
                 </div>
                 <div className="flex gap-1.5 shrink-0">
@@ -7445,23 +7583,29 @@ function CommunitiesTab() {
                 </div>
               </div>
 
-              {/* Pool balance bar — uses server ratio (0.5 floor = same as wage multiplier) */}
+              {(c.pending_minimums_count ?? 0) > 0 && (
+                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200" data-testid={`text-pool-pending-minimums-${c.id}`}>
+                  {c.pending_minimums_count} unpaid minimum{c.pending_minimums_count === 1 ? "" : "s"} queued · ${Number(c.pending_minimums_total ?? 0).toFixed(2)} owed
+                </div>
+              )}
+
+              {/* Funding progress uses the full balance/target ratio, not the separately
+                  clamped wage multiplier returned by the API. */}
               <div>
                 <div className="flex justify-between text-[10px] mb-1">
-                  <span className={`font-black ${healthColor(ratio)}`}>${balance.toFixed(2)} · {healthLabel(ratio)}</span>
+                  <span className={`font-black ${fundingColor(fundingRatio)}`}>${balance.toFixed(2)} · {fundingLabel(fundingRatio)}</span>
                   <span className="text-muted-foreground">target ${target.toLocaleString()}</span>
                 </div>
                 <div className="h-2 bg-black/20 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-700 ${
-                      ratio >= 0.9 ? "bg-gradient-to-r from-green-400 to-emerald-500"
-                      : ratio >= 0.7 ? "bg-gradient-to-r from-yellow-400 to-amber-500"
-                      : "bg-gradient-to-r from-orange-400 to-orange-500"
+                      fundingRatio >= 1 ? "bg-gradient-to-r from-green-400 to-emerald-500"
+                      : "bg-gradient-to-r from-yellow-400 to-amber-500"
                     }`}
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <div className={`text-right text-[10px] font-black mt-0.5 ${healthColor(ratio)}`}>{pct}%</div>
+                <div className={`text-right text-[10px] font-black mt-0.5 ${fundingColor(fundingRatio)}`}>{pct}%</div>
               </div>
             </div>
           );
@@ -7469,18 +7613,50 @@ function CommunitiesTab() {
       </div>
 
       {/* Unassigned / legacy global bucket */}
-      {unassigned && unassigned.member_count > 0 && (
+      {unassigned && (
+        unassigned.member_count > 0 ||
+        unassigned.active_user_count > 0 ||
+        unassigned.pool_balance !== 0 ||
+        unassigned.pending_minimums_count > 0 ||
+        unassigned.missing_community_member_count > 0 ||
+        unassigned.missing_community_active_user_count > 0 ||
+        unassigned.missing_community_pool_balance !== 0 ||
+        unassigned.missing_community_pending_minimums_count > 0 ||
+        unassigned.unscoped_community_member_count > 0 ||
+        unassigned.unscoped_community_active_user_count > 0 ||
+        unassigned.unscoped_community_pool_balance !== 0 ||
+        unassigned.unscoped_community_pending_minimums_count > 0
+      ) && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 space-y-1.5">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-black text-amber-400 uppercase tracking-widest">⚠ Unassigned Members</span>
+            <span className="text-[11px] font-black text-amber-400 uppercase tracking-widest">Legacy / Unassigned Pool Scope</span>
           </div>
           <div className="text-[11px] text-muted-foreground">
-            <span className="font-black text-foreground">{unassigned.member_count.toLocaleString()}</span> user{unassigned.member_count !== 1 ? "s" : ""} are still in the legacy global pool (community_id = NULL) and will not benefit from county-specific funding.
+            Null-scope bucket: <span className="font-black text-foreground">{unassigned.member_count.toLocaleString()}</span> members · <span className="font-black text-foreground">{unassigned.active_user_count.toLocaleString()}</span> active users · <span className="font-black text-foreground">{unassigned.active_helper_count.toLocaleString()}</span> active helpers.
           </div>
           <div className="text-[11px] text-muted-foreground">
-            Legacy pool balance: <span className="font-black text-foreground">${Number(unassigned.pool_balance).toFixed(2)}</span>
+            Legacy NULL-scope ledger balance: <span className="font-black text-foreground" data-testid="text-null-scope-pool-balance">${Number(unassigned.pool_balance).toFixed(2)}</span>
+            {unassigned.pending_minimums_count > 0 && <> · <span className="font-black text-rose-300">{unassigned.pending_minimums_count} pending minimums (${Number(unassigned.pending_minimums_total).toFixed(2)})</span></>}
           </div>
-          <div className="text-[10px] text-amber-400/70 mt-1">Reassign users below or set a Default community so new signups are auto-assigned.</div>
+          {(unassigned.unscoped_community_member_count > 0 ||
+            unassigned.unscoped_community_active_user_count > 0 ||
+            unassigned.unscoped_community_pool_balance !== 0 ||
+            unassigned.unscoped_community_pending_minimums_count > 0) && (
+            <div className="text-[11px] text-amber-100">
+              Existing communities without county/state scope: {unassigned.unscoped_community_member_count.toLocaleString()} members · {unassigned.unscoped_community_active_user_count.toLocaleString()} active users · ${Number(unassigned.unscoped_community_pool_balance).toFixed(2)} ledger balance · {unassigned.unscoped_community_pending_minimums_count} pending minimums.
+            </div>
+          )}
+          {(unassigned.missing_community_member_count > 0 ||
+            unassigned.missing_community_active_user_count > 0 ||
+            unassigned.missing_community_pool_balance !== 0 ||
+            unassigned.missing_community_pending_minimums_count > 0) && (
+            <div className="text-[11px] text-rose-200">
+              Missing community references: {unassigned.missing_community_member_count.toLocaleString()} members · {unassigned.missing_community_active_user_count.toLocaleString()} active users · ${Number(unassigned.missing_community_pool_balance).toFixed(2)} ledger balance · {unassigned.missing_community_pending_minimums_count} pending minimums.
+            </div>
+          )}
+          <div className="text-[10px] text-amber-400/70 mt-1">
+            Null-scope funds are not assigned to any county pool. Reassign users below or set a Default community so new signups are auto-assigned.
+          </div>
         </div>
       )}
 

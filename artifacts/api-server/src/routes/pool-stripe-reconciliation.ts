@@ -1,18 +1,16 @@
 import { Router } from "express";
 import Stripe from "stripe";
-import { db, communityPoolLedgerTable, communityPoolFinancialEventsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { getStripeSecretKey, getStripeWebhookSecret } from "../lib/stripe-config";
 import { recordPoolContributionSettlement } from "../lib/community-pool";
 import { getStripeSettlementBreakdown } from "../lib/stripe-settlement";
+import { scanRecentPoolContributions, POOL_STRIPE_RECONCILIATION_MAX_PAGES } from "../lib/pool-stripe-reconciliation";
 
 const router = Router();
 const STRIPE_SECRET_KEY = getStripeSecretKey();
 const STRIPE_REQUEST_TIMEOUT_MS = 10_000;
-const RECONCILIATION_MAX_PAGES = 5;
 const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY, {
       apiVersion: "2024-06-20" as Stripe.LatestApiVersion,
@@ -46,69 +44,19 @@ router.get("/pool/stripe/config-health", requireAdmin(), adminLimiter, async (_r
 router.get("/pool/stripe/reconciliation", requireAdmin(), adminLimiter, async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe is not configured." });
   const days = Math.min(Math.max(Number(req.query.days ?? 30) || 30, 1), 90);
-  const since = Math.floor(Date.now() / 1000) - days * 86400;
-  const missing: Array<Record<string, unknown>> = [];
-  let pagesScanned = 0;
-  let truncated = false;
 
   try {
-    let startingAfter: string | undefined;
-    for (let pageNumber = 0; pageNumber < RECONCILIATION_MAX_PAGES; pageNumber += 1) {
-      const page = await stripe.paymentIntents.list({
-        limit: 100,
-        created: { gte: since },
-        ...(startingAfter ? { starting_after: startingAfter } : {}),
-      });
-      pagesScanned += 1;
-
-      for (const pi of page.data) {
-        if (pi.status !== "succeeded" || pi.metadata?.["pool_contribution"] !== "true") continue;
-        const [record] = await db
-          .select({
-            ledger_id: communityPoolLedgerTable.id,
-            financial_event_id: communityPoolFinancialEventsTable.id,
-          })
-          .from(communityPoolLedgerTable)
-          .leftJoin(
-            communityPoolFinancialEventsTable,
-            eq(communityPoolFinancialEventsTable.community_pool_ledger_id, communityPoolLedgerTable.id),
-          )
-          .where(eq(communityPoolLedgerTable.stripe_payment_intent_id, pi.id))
-          .limit(1);
-        if (!record?.ledger_id || !record.financial_event_id) {
-          missing.push({
-            payment_intent_id: pi.id,
-            amount: (pi.amount_received || pi.amount) / 100,
-            currency: pi.currency,
-            status: pi.status,
-            livemode: pi.livemode,
-            created: pi.created,
-            user_id: Number(pi.metadata?.["user_id"]) || null,
-            community_id: Number(pi.metadata?.["community_id"]) || null,
-            description: pi.description ?? null,
-            missing_ledger: !record?.ledger_id,
-            missing_financial_event: !record?.financial_event_id,
-          });
-        }
-      }
-
-      if (!page.has_more || page.data.length === 0) break;
-      if (pageNumber === RECONCILIATION_MAX_PAGES - 1) {
-        truncated = true;
-        break;
-      }
-      startingAfter = page.data[page.data.length - 1]?.id;
-    }
+    const result = await scanRecentPoolContributions(
+      stripe,
+      days,
+      POOL_STRIPE_RECONCILIATION_MAX_PAGES,
+    );
     const account = await stripe.accounts.retrieve();
     return res.json({
       generated_at: new Date().toISOString(),
       lookback_days: days,
-      pages_scanned: pagesScanned,
-      truncated,
       stripe_account_id: account.id,
-      missing_ledger_count: missing.filter((item) => item.missing_ledger === true).length,
-      missing_financial_event_count: missing.filter((item) => item.missing_financial_event === true).length,
-      missing,
+      ...result,
     });
   } catch (err) {
     logger.error({ err }, "Community Pool Stripe reconciliation failed");

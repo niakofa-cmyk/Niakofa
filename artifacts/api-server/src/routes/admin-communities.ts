@@ -15,7 +15,13 @@
  * move a specific user into one.
  */
 import { Router } from "express";
-import { db, communitiesTable, usersTable, communityPoolLedgerTable } from "@workspace/db";
+import {
+  db,
+  communitiesTable,
+  usersTable,
+  communityPoolLedgerTable,
+  poolPendingMinimumsTable,
+} from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
@@ -23,6 +29,10 @@ import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { getSystemSetting, setSystemSetting } from "../lib/db-helpers";
 import { normalizeMapboxStateCode } from "../lib/civic-geo";
+import {
+  COMMUNITY_POOL_ACTIVE_WINDOW_DAYS,
+  getCommunityPoolReadiness,
+} from "../lib/community-pool-readiness";
 
 const router = Router();
 
@@ -36,11 +46,9 @@ function normalizeCounty(value: string): string {
   return value.replace(/\s+County$/i, "").replace(/\s+/g, " ").trim();
 }
 
-// GET /admin/communities — list all communities with live pool balance,
-// member count, and current pool-health ratio (same clamp used by
-// getGuaranteedMinimum). Also surfaces the legacy global/NULL bucket so
-// admins can see how many users are still unassigned, and the current
-// default_community_id so the UI can highlight which county new signups land in.
+// GET /admin/communities — live pool balance, member counts, and readiness
+// for counties with recently active users. Also surfaces legacy NULL-scope
+// balances even when no users remain in the global bucket.
 router.get("/admin/communities", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
   const [communities, defaultIdSetting] = await Promise.all([
     // Limit 1 000: communities are geographic/county-level (bounded set) but an
@@ -52,7 +60,11 @@ router.get("/admin/communities", requireAuth, requireAdmin(), adminLimiter, asyn
 
   const defaultCommunityId = defaultIdSetting ? parseInt(defaultIdSetting, 10) : null;
 
-  const [balances, memberCounts] = await Promise.all([
+  const activeSince = new Date(
+    Date.now() - COMMUNITY_POOL_ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  );
+
+  const [balances, memberCounts, activeCounts, pendingMinimums] = await Promise.all([
     db
       .select({
         community_id: communityPoolLedgerTable.community_id,
@@ -67,6 +79,25 @@ router.get("/admin/communities", requireAuth, requireAdmin(), adminLimiter, asyn
       })
       .from(usersTable)
       .groupBy(usersTable.community_id),
+    db
+      .select({
+        community_id: usersTable.community_id,
+        active_users: sql<number>`COUNT(*)::int`,
+        active_helpers: sql<number>`COUNT(*) FILTER (WHERE ${usersTable.helper_mode_active})::int`,
+      })
+      .from(usersTable)
+      .where(sql`${usersTable.deletion_status} = 'active'
+        AND ${usersTable.location_updated_at} > ${activeSince}`)
+      .groupBy(usersTable.community_id),
+    db
+      .select({
+        community_id: poolPendingMinimumsTable.community_id,
+        count: sql<number>`COUNT(*)::int`,
+        total: sql<number>`COALESCE(SUM(${poolPendingMinimumsTable.amount}), 0)::float8`,
+      })
+      .from(poolPendingMinimumsTable)
+      .where(eq(poolPendingMinimumsTable.status, "pending"))
+      .groupBy(poolPendingMinimumsTable.community_id),
   ]);
 
   const balanceByCommunity = new Map<number | null, number>(
@@ -75,13 +106,105 @@ router.get("/admin/communities", requireAuth, requireAdmin(), adminLimiter, asyn
   const membersByCommunity = new Map<number | null, number>(
     memberCounts.map(m => [m.community_id, Number(m.count)]),
   );
+  const activeByCommunity = new Map<number | null, { users: number; helpers: number }>(
+    activeCounts.map(row => [
+      row.community_id,
+      { users: Number(row.active_users), helpers: Number(row.active_helpers) },
+    ]),
+  );
+  const pendingByCommunity = new Map<number | null, { count: number; total: number }>(
+    pendingMinimums.map(row => [
+      row.community_id,
+      { count: Number(row.count), total: Number(row.total) },
+    ]),
+  );
+  const communityIds = new Set(communities.map(community => community.id));
+  const countyCommunityIds = new Set(
+    communities
+      .filter(community => Boolean(community.county?.trim() && community.state?.trim()))
+      .map(community => community.id),
+  );
+  const missingCommunityId = (communityId: number | null) =>
+    communityId !== null && !communityIds.has(communityId);
+  const withoutCountyPool = (communityId: number | null) =>
+    communityId === null || !countyCommunityIds.has(communityId);
+
+  const activeUnassigned = activeCounts
+    .filter(row => withoutCountyPool(row.community_id))
+    .reduce(
+      (total, row) => ({
+        users: total.users + Number(row.active_users),
+        helpers: total.helpers + Number(row.active_helpers),
+        missing_community_users:
+          total.missing_community_users +
+          (missingCommunityId(row.community_id) ? Number(row.active_users) : 0),
+        unscoped_community_users:
+          total.unscoped_community_users +
+          (row.community_id !== null && communityIds.has(row.community_id) && !countyCommunityIds.has(row.community_id)
+            ? Number(row.active_users)
+            : 0),
+      }),
+      { users: 0, helpers: 0, missing_community_users: 0, unscoped_community_users: 0 },
+    );
+  const pendingUnassigned = pendingMinimums
+    .filter(row => withoutCountyPool(row.community_id))
+    .reduce(
+      (total, row) => ({
+        count: total.count + Number(row.count),
+        amount: total.amount + Number(row.total),
+        missing_community_count:
+          total.missing_community_count +
+          (missingCommunityId(row.community_id) ? Number(row.count) : 0),
+        unscoped_community_count:
+          total.unscoped_community_count +
+          (row.community_id !== null && communityIds.has(row.community_id) && !countyCommunityIds.has(row.community_id)
+            ? Number(row.count)
+            : 0),
+      }),
+      { count: 0, amount: 0, missing_community_count: 0, unscoped_community_count: 0 },
+    );
+  const missingCommunityMembers = memberCounts
+    .filter(row => missingCommunityId(row.community_id))
+    .reduce((total, row) => total + Number(row.count), 0);
+  const unscopedCommunityMembers = memberCounts
+    .filter(row =>
+      row.community_id !== null &&
+      communityIds.has(row.community_id) &&
+      !countyCommunityIds.has(row.community_id),
+    )
+    .reduce((total, row) => total + Number(row.count), 0);
+  const missingCommunityBalance = balances
+    .filter(row => missingCommunityId(row.community_id))
+    .reduce((total, row) => total + Number(row.balance), 0);
+  const unscopedCommunityBalance = balances
+    .filter(row =>
+      row.community_id !== null &&
+      communityIds.has(row.community_id) &&
+      !countyCommunityIds.has(row.community_id),
+    )
+    .reduce((total, row) => total + Number(row.balance), 0);
 
   const result = communities.map(c => {
     const balance = balanceByCommunity.get(c.id) ?? 0;
+    const activity = activeByCommunity.get(c.id) ?? { users: 0, helpers: 0 };
+    const pending = pendingByCommunity.get(c.id) ?? { count: 0, total: 0 };
+    const isCountyPool = countyCommunityIds.has(c.id);
     return {
       ...c,
       pool_balance: balance,
       member_count: membersByCommunity.get(c.id) ?? 0,
+      is_county_pool: isCountyPool,
+      active_user_count: activity.users,
+      active_helper_count: activity.helpers,
+      pending_minimums_count: pending.count,
+      pending_minimums_total: pending.total,
+      readiness_status: getCommunityPoolReadiness({
+        isCountyPool,
+        activeUserCount: activity.users,
+        balance,
+        targetReserveAmount: c.target_reserve_amount,
+        pendingMinimumCount: pending.count,
+      }),
       pool_health_ratio:
         c.target_reserve_amount > 0
           ? Math.min(1.0, Math.max(0.5, balance / c.target_reserve_amount))
@@ -94,7 +217,20 @@ router.get("/admin/communities", requireAuth, requireAdmin(), adminLimiter, asyn
     unassigned: {
       pool_balance: balanceByCommunity.get(null) ?? 0,
       member_count: membersByCommunity.get(null) ?? 0,
+      active_user_count: activeUnassigned.users,
+      active_helper_count: activeUnassigned.helpers,
+      missing_community_active_user_count: activeUnassigned.missing_community_users,
+      unscoped_community_active_user_count: activeUnassigned.unscoped_community_users,
+      pending_minimums_count: pendingUnassigned.count,
+      pending_minimums_total: pendingUnassigned.amount,
+      missing_community_pending_minimums_count: pendingUnassigned.missing_community_count,
+      unscoped_community_pending_minimums_count: pendingUnassigned.unscoped_community_count,
+      missing_community_member_count: missingCommunityMembers,
+      missing_community_pool_balance: missingCommunityBalance,
+      unscoped_community_member_count: unscopedCommunityMembers,
+      unscoped_community_pool_balance: unscopedCommunityBalance,
     },
+    active_window_days: COMMUNITY_POOL_ACTIVE_WINDOW_DAYS,
     default_community_id: isNaN(defaultCommunityId as number) ? null : defaultCommunityId,
   });
 });

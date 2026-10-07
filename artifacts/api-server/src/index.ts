@@ -4,7 +4,7 @@ import { logger } from "./lib/logger";
 import { getStripeSecretKey, getStripeWebhookSecret } from "./lib/stripe-config";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
 import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startNet30InvoiceReminderWorker, startCommunityStoryCleanupWorker, startExchangeMaintenanceWorker, startScheduledAccountPurgeWorker } from "./lib/scheduler";
-import { startLedgerDriftMonitor } from "./lib/ledger-stripe-drift";
+import { startPoolStripeReconciliationMonitor } from "./lib/ledger-stripe-drift";
 import {
   isRedisConfigured,
   assertProductionRedisReady,
@@ -154,7 +154,7 @@ server.listen(port, async () => {
   registerWorker("pledge-defaults",     "Pledge Default Sweeper", false);
   registerWorker("cashout-recon",       "Cashout Reconciliation", false);
   registerWorker("recurring-requests",  "Recurring Requests",     false);
-  registerWorker("ledger-drift",        "Ledger/Stripe Drift",    false);
+  registerWorker("pool-stripe-reconciliation", "Pool Stripe Reconciliation", false);
   registerWorker("net30-invoices",      "NET30 Invoice Reminders",false);
   registerWorker("daily-kindness",      "Daily Kindness Engine",  false);
   registerWorker("payment-reminder",    "Payment Reminder",       false);
@@ -234,8 +234,8 @@ server.listen(port, async () => {
   startPledgeDefaultWorker(); workerStarted("pledge-defaults", "Pledge Default Sweeper", false);
   // Cashout reconciliation — refunds stale pending/failed cashouts with no Stripe transfer
   startCashoutReconciliation(); workerStarted("cashout-recon", "Cashout Reconciliation", false);
-  // Ledger/Stripe drift — integer cents, 1-cent spendable tolerance (not $10)
-  startLedgerDriftMonitor(); workerStarted("ledger-drift", "Ledger/Stripe Drift", false);
+  // Transaction-level Stripe audit; platform-wide balance totals are diagnostic only.
+  startPoolStripeReconciliationMonitor(); workerStarted("pool-stripe-reconciliation", "Pool Stripe Reconciliation", false);
   // NET30 invoice reminders — notify gov sponsors 7 days before civic invoice due
   startNet30InvoiceReminderWorker(); workerStarted("net30-invoices", "NET30 Invoice Reminders", false);
   // Daily Kindness Engine — morning push to active helpers with nearby open requests
