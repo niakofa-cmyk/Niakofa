@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import express from "express";
@@ -1010,6 +1010,31 @@ suite("isolated cross-community content and media access matrix", () => {
         .set("Authorization", `Bearer ${token}`);
       expect(nonOwnerDelete.status).toBe(200);
       expect(nonOwnerDelete.body.deleted).toBe(false);
+    }
+
+    const failedStorageKey = assetStorageKeys[0];
+    expect(failedStorageKey).toBeTruthy();
+    if (!failedStorageKey) throw new Error("The processed Moment has no storage key for cleanup recovery testing.");
+    const failedStoragePath = path.resolve(UPLOADS_BASE, failedStorageKey);
+    await rm(failedStoragePath, { force: true, recursive: true });
+    await mkdir(failedStoragePath);
+    try {
+      const failedOwnerDelete = await request(app)
+        .delete(`/community/stories/${videoStoryId}`)
+        .set("Authorization", `Bearer ${authorToken}`);
+      expect(failedOwnerDelete.status).toBe(503);
+      expect(failedOwnerDelete.body).toMatchObject({
+        deleted: false,
+        error_code: "STORY_MEDIA_CLEANUP_FAILED",
+      });
+      const { rows: retainedStory } = await pool.query<{ status: string }>(
+        "SELECT status FROM community_stories WHERE id = $1 AND author_user_id = $2",
+        [videoStoryId, authorId],
+      );
+      expect(retainedStory).toEqual([{ status: "deletion_pending" }]);
+      expect(existsSync(failedStoragePath)).toBe(true);
+    } finally {
+      await rm(failedStoragePath, { force: true, recursive: true });
     }
 
     const ownerDelete = await request(app)
