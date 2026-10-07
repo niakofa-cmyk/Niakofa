@@ -20,6 +20,7 @@ const uploader = fs.readFileSync(path.join(appRoot, "components/community/Commun
 const momentsView = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsView.tsx"), "utf8");
 const exchange = fs.readFileSync(path.join(appRoot, "components/community/CommunityExchangeSparks.tsx"), "utf8");
 const communityPage = fs.readFileSync(path.join(appRoot, "pages/community.tsx"), "utf8");
+const creatorMomentsPage = fs.readFileSync(path.join(appRoot, "pages/community-creator-moments.tsx"), "utf8");
 const exchangeView = fs.readFileSync(path.join(appRoot, "components/community/CommunityExchangeView.tsx"), "utf8");
 const exchangeComposer = fs.readFileSync(path.join(appRoot, "components/community/CommunityExchangeSparkComposer.tsx"), "utf8");
 const storyShareSheet = fs.readFileSync(path.join(appRoot, "components/community/StoryShareSheet.tsx"), "utf8");
@@ -143,6 +144,22 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(moments, /function hasCaptionOverlay\(spark: MomentSpark\)/);
     assert.match(moments, /spark\.caption && !hasCaptionOverlay\(spark\)/);
     assert.match(moments, /spark\.caption && media &&/);
+  });
+
+  test("owners can delete Moments from every collection and retain confirmation after cleanup failure", () => {
+    assert.match(creatorMomentsPage, /\{owner && deleteConfirmId !== story\.id && <button/);
+    assert.match(creatorMomentsPage, /data-testid=\{`button-delete-moment-\$\{story\.id\}`\}/);
+    assert.match(creatorMomentsPage, />Delete Moment<\/button>/);
+    assert.match(creatorMomentsPage, /\{owner && deleteConfirmId === story\.id && <div[^>]*aria-label=\{`Confirm deletion of Moment \$\{story\.id\}`\}/);
+    assert.doesNotMatch(creatorMomentsPage, /owner && view === "archive" && deleteConfirmId/);
+    assert.match(creatorMomentsPage, /Permanently delete this Moment and its stored media\? This cannot be undone\./);
+    assert.match(creatorMomentsPage, /await deleteMoment\(story\.id\);[\s\S]*?setDeleteConfirmId\(null\);/);
+    assert.match(creatorMomentsPage, /deleteError && <p[^>]*role="alert"[^>]*data-testid=\{`status-delete-moment-error-\$\{story\.id\}`\}/);
+    assert.match(creatorMomentsPage, /runAction\(story\.id, async \(\) => \{[\s\S]*?\}, setDeleteError\)/);
+    const actionRunner = creatorMomentsPage.match(/const runAction = async \([\s\S]*?\n  };/)?.[0];
+    assert.ok(actionRunner, "collection actions should have a shared mutation handler");
+    assert.match(actionRunner, /reportError\(reason instanceof Error \? reason\.message : "That Moment could not be updated\."\)/);
+    assert.doesNotMatch(actionRunner, /setDeleteConfirmId/);
   });
 
   test("Moments cancels active playback grants and pauses media when hidden or offscreen", () => {

@@ -90,6 +90,7 @@ export default function CommunityCreatorMomentsPage() {
   const [moreLoading, setMoreLoading] = useState(false);
   const [mutationId, setMutationId] = useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const [actionError, setActionError] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const collectionKey = useMemo(() => ["community-creator-moments", authorId, view], [authorId, view]);
@@ -109,11 +110,13 @@ export default function CommunityCreatorMomentsPage() {
     setExtraStories([]);
     setNextCursor(collection?.next_cursor ?? null);
     setDeleteConfirmId(null);
+    setDeleteError("");
   }, [authorId, view, collection]);
 
   const changeView = (next: View) => {
     setView(next);
     setDeleteConfirmId(null);
+    setDeleteError("");
     setActionError("");
     const query = next === "published" ? "" : `?view=${encodeURIComponent(next)}`;
     navigate(`/community/creators/${authorId}${query}`);
@@ -139,14 +142,18 @@ export default function CommunityCreatorMomentsPage() {
     window.dispatchEvent(new Event("community-moments-refresh"));
   };
 
-  const runAction = async (storyId: number, action: () => Promise<unknown>) => {
+  const runAction = async (
+    storyId: number,
+    action: () => Promise<unknown>,
+    reportError: (message: string) => void = setActionError,
+  ) => {
     setMutationId(storyId);
     setActionError("");
     try {
       await action();
       await refreshCollections();
     } catch (reason) {
-      setActionError(reason instanceof Error ? reason.message : "That Moment could not be updated.");
+      reportError(reason instanceof Error ? reason.message : "That Moment could not be updated.");
     } finally {
       setMutationId(null);
     }
@@ -232,18 +239,19 @@ export default function CommunityCreatorMomentsPage() {
                           <button type="button" onClick={() => void runAction(story.id, () => setMomentFeatured(story.id, !story.featured_at))} disabled={mutationId === story.id} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted disabled:opacity-60" data-testid={`button-feature-moment-${story.id}`}><Star className={`h-3.5 w-3.5 ${story.featured_at ? "fill-current text-secondary" : ""}`} aria-hidden="true" /> {story.featured_at ? "Unfeature" : "Feature"}</button>
                           <button type="button" onClick={() => void runAction(story.id, () => updateMomentSettings(story.id, !story.remix_enabled))} disabled={mutationId === story.id} aria-pressed={Boolean(story.remix_enabled)} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold hover:bg-muted disabled:opacity-60" data-testid={`button-remix-setting-${story.id}`}><BookmarkCheck className="h-3.5 w-3.5" aria-hidden="true" /> Responses {story.remix_enabled ? "on" : "off"}</button>
                         </div>}
-                        {owner && view === "archive" && deleteConfirmId === story.id && <div className="mt-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3" role="group" aria-label={`Confirm deletion of Moment ${story.id}`}>
-                          <p className="text-xs leading-relaxed text-foreground">Delete this archived Moment and its stored media permanently? This cannot be undone.</p>
+                        {owner && deleteConfirmId === story.id && <div className="mt-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3" role="group" aria-label={`Confirm deletion of Moment ${story.id}`}>
+                          <p className="text-xs leading-relaxed text-foreground">Permanently delete this Moment and its stored media? This cannot be undone.</p>
+                          {deleteError && <p className="mt-2 rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive" role="alert" data-testid={`status-delete-moment-error-${story.id}`}>{deleteError}</p>}
                           <div className="mt-3 flex flex-wrap gap-2">
                             <button type="button" onClick={() => void runAction(story.id, async () => {
                               await deleteMoment(story.id);
                               setExtraStories((current) => current.filter((item) => item.id !== story.id));
                               setDeleteConfirmId(null);
-                            })} disabled={mutationId === story.id} className="inline-flex min-h-10 items-center rounded-lg bg-destructive px-3 text-xs font-bold text-destructive-foreground disabled:opacity-60" data-testid={`button-confirm-delete-moment-${story.id}`}>Delete permanently</button>
-                            <button type="button" onClick={() => setDeleteConfirmId(null)} disabled={mutationId === story.id} className="inline-flex min-h-10 items-center rounded-lg border border-border px-3 text-xs font-bold hover:bg-muted disabled:opacity-60" data-testid={`button-cancel-delete-moment-${story.id}`}>Keep this Moment</button>
+                            }, setDeleteError)} disabled={mutationId === story.id} className="inline-flex min-h-10 items-center rounded-lg bg-destructive px-3 text-xs font-bold text-destructive-foreground disabled:opacity-60" data-testid={`button-confirm-delete-moment-${story.id}`}>Delete permanently</button>
+                            <button type="button" onClick={() => { setDeleteConfirmId(null); setDeleteError(""); }} disabled={mutationId === story.id} className="inline-flex min-h-10 items-center rounded-lg border border-border px-3 text-xs font-bold hover:bg-muted disabled:opacity-60" data-testid={`button-cancel-delete-moment-${story.id}`}>Keep this Moment</button>
                           </div>
                         </div>}
-                        {owner && view === "archive" && deleteConfirmId !== story.id && <button type="button" onClick={() => setDeleteConfirmId(story.id)} disabled={mutationId === story.id} className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-destructive/40 px-3 text-xs font-bold text-destructive hover:bg-destructive/5 disabled:opacity-60" data-testid={`button-delete-moment-${story.id}`}>Delete archived Moment</button>}
+                        {owner && deleteConfirmId !== story.id && <button type="button" onClick={() => { setDeleteError(""); setDeleteConfirmId(story.id); }} disabled={mutationId === story.id} className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-destructive/40 px-3 text-xs font-bold text-destructive hover:bg-destructive/5 disabled:opacity-60" data-testid={`button-delete-moment-${story.id}`}>Delete Moment</button>}
                         {mutationId === story.id && <p className="mt-2 inline-flex items-center gap-2 text-xs text-muted-foreground" role="status"><LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Saving</p>}
                       </div>
                     </article>
