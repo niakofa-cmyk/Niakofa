@@ -66,6 +66,13 @@ create_runtime_dir() {
   fi
 }
 
+materialize_state_json() {
+  local env_name="$1"
+  local filename="$2"
+  local json_value="${!env_name:-}"
+  printf '%s' "$json_value" | node "$script_dir/materialize-storage-state.mjs" "$runtime_dir/$filename"
+}
+
 # Secret JSON may be supplied by a secure environment variable. Materialize it
 # only for this process tree in a private runtime directory; never log it.
 if [[ -n "${USER_A_STATE_JSON:-}" ]]; then
@@ -74,10 +81,7 @@ if [[ -n "${USER_A_STATE_JSON:-}" ]]; then
     exit 2
   fi
   create_runtime_dir
-  USER_A_STATE="$runtime_dir/user-a-state.json"
-  umask 077
-  printf '%s' "$USER_A_STATE_JSON" > "$USER_A_STATE"
-  chmod 600 "$USER_A_STATE"
+  USER_A_STATE="$(materialize_state_json USER_A_STATE_JSON user-a-state.json)"
   export USER_A_STATE
   unset USER_A_STATE_JSON
 fi
@@ -88,10 +92,7 @@ if [[ -n "${USER_B_STATE_JSON:-}" ]]; then
     exit 2
   fi
   create_runtime_dir
-  USER_B_STATE="$runtime_dir/user-b-state.json"
-  umask 077
-  printf '%s' "$USER_B_STATE_JSON" > "$USER_B_STATE"
-  chmod 600 "$USER_B_STATE"
+  USER_B_STATE="$(materialize_state_json USER_B_STATE_JSON user-b-state.json)"
   export USER_B_STATE
   unset USER_B_STATE_JSON
 fi

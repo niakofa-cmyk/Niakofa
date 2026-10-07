@@ -28,3 +28,22 @@ export function serializeStorageState(state, configuredMaxBytes = process.env.US
 
   return serialized;
 }
+
+export function serializeStorageStateJson(json, configuredMaxBytes = process.env.USER_A_STATE_MAX_BYTES) {
+  if (typeof json !== "string") {
+    throw new Error("storage state input must be a JSON string.");
+  }
+
+  let state;
+  try {
+    state = JSON.parse(json);
+  } catch {
+    throw new Error("storage state input is not valid JSON.");
+  }
+
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    throw new Error("storage state JSON must contain an object.");
+  }
+
+  return serializeStorageState(state, configuredMaxBytes);
+}

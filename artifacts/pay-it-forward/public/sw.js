@@ -110,26 +110,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Static assets (JS, CSS, images, fonts): cache-first → network fallback
+  const cachedResponsePromise = caches.match(request);
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) {
-        // Refresh the cache in the background while returning the cached copy
-        fetch(request)
-          .then((response) => {
-            if (response && response.ok) {
-              return caches
-                .open(CACHE_NAME)
-                .then((cache) => cache.put(request, response));
-            }
-          })
-          .catch((error) => {
-            if (self.navigator.onLine) {
-              const reason = error instanceof Error ? error.name : "unknown error";
-              console.warn("[service-worker] Background asset refresh failed:", reason);
-            }
-          });
-        return cached;
-      }
+    cachedResponsePromise.then((cached) => {
+      if (cached) return cached;
 
       // Not in cache — fetch from network and cache the result
       return fetch(request).then((response) => {
@@ -141,6 +125,35 @@ self.addEventListener("fetch", (event) => {
         return response;
       });
     })
+  );
+  // Keep the worker alive for stale-while-revalidate work after returning the
+  // cached response; otherwise the browser may stop the worker before refresh
+  // failures can be observed or a successful response can replace the cache.
+  event.waitUntil(
+    cachedResponsePromise
+      .then((cached) => {
+        if (!cached) return;
+
+        return fetch(request).then((response) => {
+          if (response && response.ok) {
+            return caches
+              .open(CACHE_NAME)
+              .then((cache) => cache.put(request, response));
+          }
+          if (self.navigator.onLine) {
+            const reason = response && Number.isInteger(response.status)
+              ? `HTTP ${response.status}`
+              : "no response";
+            console.warn("[service-worker] Background asset refresh returned a non-success response:", reason);
+          }
+        });
+      })
+      .catch((error) => {
+        if (self.navigator.onLine) {
+          const reason = error instanceof Error ? error.name : "unknown error";
+          console.warn("[service-worker] Background asset refresh failed:", reason);
+        }
+      })
   );
 });
 

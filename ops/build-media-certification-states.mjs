@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { serializeStorageState } from "./user-state-serialization.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = process.env.MEDIA_CERT_STATE_DIR;
@@ -88,7 +89,7 @@ if (process.env.ALLOW_MEDIA_CERT_STATE_CREATION !== "1") {
         }],
       };
       const statePath = path.join(dir, `media-cert-${label.toLowerCase()}.json`);
-      fs.writeFileSync(statePath, JSON.stringify(state), { flag: "wx", mode: 0o600 });
+      fs.writeFileSync(statePath, serializeStorageState(state), { flag: "wx", mode: 0o600 });
       written.push(statePath);
       const check = spawnSync(process.execPath, [path.join(root, "ops/validate-user-a-state.mjs"), statePath, `USER_${label}_STATE`], {
         cwd: root, stdio: "ignore",

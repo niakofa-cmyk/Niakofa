@@ -43,9 +43,7 @@ if [[ -n "${USER_A_STATE_JSON:-}" ]]; then
   runtime_dir="$(mktemp -d "${TMPDIR:-/tmp}/niakofa-acceptance.XXXXXX")"
   chmod 700 "$runtime_dir"
   USER_A_STATE="$runtime_dir/user-a-state.json"
-  umask 077
-  printf '%s' "$USER_A_STATE_JSON" > "$USER_A_STATE"
-  chmod 600 "$USER_A_STATE"
+  printf '%s' "$USER_A_STATE_JSON" | node ops/materialize-storage-state.mjs "$USER_A_STATE" >/dev/null
   export USER_A_STATE
 fi
 

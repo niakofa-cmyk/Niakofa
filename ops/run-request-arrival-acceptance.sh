@@ -37,11 +37,8 @@ materialize_state_json() {
 
   runtime_dir="${runtime_dir:-$(mktemp -d "${TMPDIR:-/tmp}/niakofa-arrival.XXXXXX")}"
   chmod 700 "$runtime_dir"
-  umask 077
   local path="$runtime_dir/${env_name,,}.json"
-  printf '%s' "$json_value" > "$path"
-  chmod 600 "$path"
-  printf '%s\n' "$path"
+  printf '%s' "$json_value" | node ops/materialize-storage-state.mjs "$path"
 }
 
 if [[ -n "${USER_A_STATE_JSON:-}" ]]; then
