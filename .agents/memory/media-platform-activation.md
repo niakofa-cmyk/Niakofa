@@ -50,3 +50,9 @@ If Railway service-shell access and the local Railway CLI are unavailable, a tem
 **Why:** On 2026-10-06, the connected Railway tools and local container could not reach the API shell; a staged, isolated Function provided a bounded execution path while preserving the live API configuration.
 
 **How to apply:** Use this fallback only after explicit approval for a temporary production deployment and removal. Stage and inspect only the Function and its bucket references before deploying. Never read or print credential values, change V21, or start another key while cleanup is unproven.
+
+The operator confirmed on 2026-10-07 that production `STORAGE_BUCKET` resolves to the unique S3 `BUCKET` from `niakofa-production-media`, and that the endpoint and access-key references belong to that same resource.
+
+**Why:** Railway’s display label is not the S3 API bucket name, and credential values must not be retrieved just to validate their references.
+
+**How to apply:** Treat this as operator evidence for the bounded probe; reconfirm if the bucket resource or API variable references change.
