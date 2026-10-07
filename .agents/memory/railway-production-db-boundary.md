@@ -32,3 +32,11 @@ When Niakofa is backed by separate Railway PostgreSQL services, `DATABASE_URL` m
 **Why:** The Railway MCP can inspect infrastructure but is not itself a SQL client, while the application depends on PostGIS geography types. A healthy Railway service or successful TCP connection alone does not prove that the application is using the spatial database.
 
 **How to apply:** Confirm the intended Railway database target before mutation, run migrations fail-closed, verify the extension and schema afterward, and keep Haversine fallback only for environments that intentionally lack PostGIS.
+
+## Credential validation
+
+Secret presence or secure-form confirmation does not prove that a Replit process can authenticate with the saved connection value. An operator's successful interactive login also does not validate a URI's password encoding or the value saved in Replit.
+
+**Why:** A read-only role authenticated from the operator's prompt, while repeated Replit URI and temporary-password-file attempts still failed authentication. The secret value was intentionally inaccessible for comparison.
+
+**How to apply:** Verify the actual Replit connection and privilege guard before querying. After repeated authentication failures, stop retrying hidden values and use an operator-run read-only query or another verified path; never inspect or print the secret to diagnose it.
