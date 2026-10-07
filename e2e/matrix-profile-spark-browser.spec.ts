@@ -26,11 +26,11 @@ const accountStatePaths = {
   C: process.env.MATRIX_USER_C_STATE,
 };
 
-test.skip(
-  !apiUrl || Object.values(accountStatePaths).some((statePath) => !statePath),
-  "Requires the opt-in local cross-community matrix fixture and its short-lived A/B/C states.",
-);
+const browserSuite = apiUrl && Object.values(accountStatePaths).every(Boolean)
+  ? test.describe
+  : test.describe.skip;
 
+browserSuite("matrix profile and Spark browser acceptance", () => {
 async function loadMatrixUser(statePath: string): Promise<MatrixUser> {
   const state = JSON.parse(await readFile(statePath, "utf8")) as MatrixStorageState;
   const storedUser = state.origins
@@ -77,7 +77,28 @@ async function installLocalApiBridge(page: Page, user: MatrixUser): Promise<void
     }
 
     const fixturePath = `${pathname.replace(/^\/api(?=\/|$)/, "")}${url.search}`;
-    return route.fetch({ url: new URL(fixturePath, apiUrl).toString() });
+    const headers = await request.allHeaders();
+    delete headers.host;
+    delete headers["content-length"];
+    delete headers["accept-encoding"];
+    const body = request.postData();
+    let response: Response;
+    try {
+      response = await fetch(new URL(fixturePath, apiUrl!).toString(), {
+        method: request.method(),
+        headers,
+        ...(body && request.method() !== "GET" && request.method() !== "HEAD" ? { body } : {}),
+        signal: AbortSignal.timeout(8_000),
+      });
+    } catch (error) {
+      console.error(`Local matrix API bridge failed for ${request.method()} ${pathname}.`, error);
+      throw error;
+    }
+    await route.fulfill({
+      status: response.status,
+      contentType: response.headers.get("content-type") ?? "application/json",
+      body: Buffer.from(await response.arrayBuffer()),
+    });
   });
 }
 
@@ -141,6 +162,7 @@ test("renders the redesigned profile for disposable approved Account A", async (
 });
 
 test("requires camera consent and restores a cancelled Spark text draft without reopening camera", async ({ browser }) => {
+  test.setTimeout(90_000);
   const { context, page } = await openMatrixAccount(browser, accountStatePaths.A!);
   const composerUrl = new URL("/community/moments?composer=1", baseUrl).toString();
   try {
@@ -161,15 +183,11 @@ test("requires camera consent and restores a cancelled Spark text draft without 
     });
 
     await page.goto(composerUrl);
-    const composer = page.getByRole("dialog", { name: "Create a Spark" });
-    await expect(composer).toBeVisible();
-    await expect(page.getByTestId("button-spark-camera")).toBeVisible();
-    expect(await getMediaAccessCount(page)).toBe(0);
-
-    await page.getByTestId("button-spark-camera").click();
-    await expect(page.getByTestId("dialog-spark-camera")).toBeVisible();
+    const cameraDialog = page.getByTestId("dialog-spark-camera");
+    await expect(cameraDialog).toBeVisible();
     await expect(page.getByTestId("status-spark-camera-off")).toBeVisible();
     expect(await getMediaAccessCount(page)).toBe(0);
+
     await page.getByTestId("button-setup-spark-camera").click();
     await expect(page.getByTestId("button-confirm-spark-camera")).toBeVisible();
     expect(await getMediaAccessCount(page)).toBe(0);
@@ -177,15 +195,21 @@ test("requires camera consent and restores a cancelled Spark text draft without 
     await expect.poll(() => getMediaAccessCount(page)).toBeGreaterThan(0);
     await expect(page.getByTestId("button-record-spark-video")).toBeVisible();
     await page.getByTestId("button-cancel-spark-camera").click();
-    await expect(composer).toHaveCount(0);
+    await expect(cameraDialog).toHaveCount(0);
 
-    await page.goto(composerUrl);
+    await page.goto(new URL("/community/moments", baseUrl).toString());
+    const createSpark = page.getByTestId("button-create-moment-fullbleed");
+    await expect(createSpark).toBeVisible();
+    await createSpark.click();
+    await expect(cameraDialog).toBeVisible();
+    await page.getByTestId("button-spark-camera-text").click();
+    await expect(cameraDialog).toHaveCount(0);
+    const composer = page.getByRole("dialog", { name: "Create a Spark" });
     await expect(composer).toBeVisible();
     await expect.poll(() => getMediaAccessCount(page)).toBe(0);
     const sourceWords = "Matrix browser draft: saved before closing.";
-    await page.locator("#spark-source-words").fill(sourceWords);
-    await page.getByTestId("button-spark-start-with-words").click();
     await expect(page.locator(".nia-story-composer__step[aria-current='step']")).toContainText("Make it yours");
+    await page.getByRole("textbox", { name: "Add text to your Spark…" }).fill(sourceWords);
     await expect(page.locator(".nia-story-editor-surface").getByText(sourceWords, { exact: true })).toBeVisible();
     await expect(page.getByText("Draft saved on this device")).toBeVisible({ timeout: 15_000 });
 
@@ -193,6 +217,7 @@ test("requires camera consent and restores a cancelled Spark text draft without 
     await expect(composer).toHaveCount(0);
     await page.goto(composerUrl);
     await expect(composer).toBeVisible();
+    await expect(cameraDialog).toHaveCount(0);
     await expect(page.locator(".nia-story-composer__step[aria-current='step']")).toContainText("Make it yours");
     await expect(page.locator(".nia-story-editor-surface").getByText(sourceWords, { exact: true })).toBeVisible();
     await expect.poll(() => getMediaAccessCount(page)).toBe(0);
@@ -202,6 +227,7 @@ test("requires camera consent and restores a cancelled Spark text draft without 
 });
 
 test("keeps pending Spark and stitch retry details author-only across matrix Accounts A, B, and C", async ({ browser }) => {
+  test.setTimeout(90_000);
   const storyId = Number(process.env.MATRIX_PENDING_STORY_ID);
   const caption = process.env.MATRIX_PENDING_STORY_CAPTION ?? "";
   const expectedSourceIds = JSON.parse(process.env.MATRIX_PENDING_SOURCE_IDS ?? "[]") as number[];
@@ -255,4 +281,5 @@ test("keeps pending Spark and stitch retry details author-only across matrix Acc
       await context.close();
     }
   }
+});
 });

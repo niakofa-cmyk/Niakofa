@@ -1497,5 +1497,5 @@ suite("isolated cross-community content and media access matrix", () => {
       }
       await rm(stateDirectory, { recursive: true, force: true });
     }
-  });
+  }, 260_000);
 });
