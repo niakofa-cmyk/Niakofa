@@ -9,6 +9,12 @@ Use the bound GitHub connector's Git Database API to create blobs, a tree, a com
 
 **How to apply:** Verify the remote base ref before writing and compare blob/tree SHAs. Compare the created commit SHA directly with local `HEAD`; if it differs, inspect the remote tree, parent, metadata, and exact message bytes before reconstructing locally. Advance the ref only with `force: false`, then independently fetch and compare `HEAD`, `origin/main`, remote `main`, tree, parent, and worktree cleanliness.
 
+Read the exact message bytes from the raw commit object when recreating a commit. `git show -s --format=%B` adds a pretty-format terminator; if the stored message already ends in LF, `%B` can add an extra LF and produce a different commit SHA.
+
+**Why:** GitHub preserved the extra newline supplied by `%B`, creating a distinct object even though the tree, parent, author, and committer matched.
+
+**How to apply:** Extract the message body from `git cat-file commit HEAD`, pass those exact bytes to the Git Database API, and advance the ref only after the resulting SHA matches local `HEAD`.
+
 CodeExecution's `shellExec` callback may render tab-separated Git plumbing with a dot in place of the tab and CRLF line endings. Do not parse its raw `diff-tree --raw` output by splitting on a tab; serialize the metadata as JSON inside the shell command or use the ordinary shell tool when exact delimiters matter.
 
 **Why:** Multiple parsers failed on apparently valid Git output because the callback's rendered text differed from the ordinary shell's raw bytes.
