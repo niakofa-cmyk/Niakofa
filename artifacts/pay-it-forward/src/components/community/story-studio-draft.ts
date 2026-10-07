@@ -13,6 +13,8 @@ export type StudioDraft = CommunityMomentDraft & {
   clientPublishId?: string;
   attemptedSignature?: string;
   publishAssetIds?: number[];
+  cameraReelAssetIds?: number[];
+  cameraReelStoryId?: number | null;
   selection: number[];
   previewIndex: number;
   audience: "community" | "hub";
@@ -93,6 +95,34 @@ export function exchangeResumeAction(input: {
 
 export const studioDraftKey = (userId: number, hubId: number | null) => `studio:${userId}:${hubId ?? "community"}`;
 
+export function isValidCameraReelAssetIds(ids: number[] | undefined): ids is number[] {
+  return Array.isArray(ids)
+    && ids.length >= 1
+    && ids.length <= 6
+    && ids.every((id) => Number.isSafeInteger(id) && id > 0)
+    && new Set(ids).size === ids.length;
+}
+
+export function recoverStudioCameraReelAssetIds(
+  draft: Pick<StudioDraft, "cameraReelAssetIds" | "publishAssetIds" | "uploadedMediaAssetIds">,
+  selectedIndexes: number[],
+): number[] {
+  if (isValidCameraReelAssetIds(draft.cameraReelAssetIds)) {
+    return [...draft.cameraReelAssetIds];
+  }
+
+  const orderedPublishIds = draft.publishAssetIds?.slice(0, selectedIndexes.length);
+  if (orderedPublishIds?.length === selectedIndexes.length && isValidCameraReelAssetIds(orderedPublishIds)) {
+    return orderedPublishIds;
+  }
+
+  const orderedUploadedIds = selectedIndexes.map((index) => draft.uploadedMediaAssetIds?.[index] ?? 0);
+  if (orderedUploadedIds.length === selectedIndexes.length && isValidCameraReelAssetIds(orderedUploadedIds)) {
+    return orderedUploadedIds;
+  }
+  return [];
+}
+
 export function emptyStudioScope(hubId: number | null) {
   return {
     files: [] as File[],
@@ -126,7 +156,11 @@ export async function persistStudioPublishAttempt(
     || selectedIndexes.some((index) => !Number.isInteger(index) || index < 0 || index >= draft.files.length)
     || orderedAssetIds.some((id) => !Number.isSafeInteger(id) || id < 1)
     || musicAssetId !== null && orderedAssetIds[orderedAssetIds.length - 1] !== musicAssetId
-    || new Set(orderedAssetIds).size !== orderedAssetIds.length) {
+    || new Set(orderedAssetIds).size !== orderedAssetIds.length
+    || (draft.cameraReelAssetIds?.length ?? 0) > 0
+      && (!isValidCameraReelAssetIds(draft.cameraReelAssetIds)
+        || draft.cameraReelAssetIds.length !== visualAssetIds.length
+        || draft.cameraReelAssetIds.some((id, index) => id !== visualAssetIds[index]))) {
     throw new Error("The Spark upload sequence could not be saved safely. Nothing was published.");
   }
   const slots = Array.from({ length: draft.files.length }, (_, index) => draft.uploadedMediaAssetIds?.[index] ?? 0);
@@ -147,7 +181,8 @@ export async function persistStudioPublishAttempt(
 }
 
 export async function persistStudioDraft(draft: StudioDraft): Promise<void> {
-  if (!draft.files.length && !draft.caption.trim() && !draft.elements.length && !draft.exchangeDraftId && !draft.musicFile) {
+  if (!draft.files.length && !draft.caption.trim() && !draft.elements.length && !draft.exchangeDraftId && !draft.musicFile
+    && !draft.cameraReelStoryId && !draft.cameraReelAssetIds?.length) {
     await discardStudioDraft(draft.userId, draft.contextKind === "hub_moment" ? draft.contextId : null);
     return;
   }

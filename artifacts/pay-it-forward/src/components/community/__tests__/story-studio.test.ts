@@ -3,7 +3,7 @@ import test from "node:test";
 import { CameraClipReelPendingError, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
 import { buildMomentMediaAccessibility, parseMomentStudioTags, restoreMomentStudioAccessibility, validateMomentStudioWebVtt, type MomentStudioAccessibilityDraft } from "../moment-studio-accessibility";
 import { trimVideoFile } from "../story-media-tools";
-import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, persistStudioDraft, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "../story-studio-draft";
+import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, isValidCameraReelAssetIds, loadStudioDraft, persistStudioDraft, persistStudioPublishAttempt, recoverStudioCameraReelAssetIds, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "../story-studio-draft";
 
 const file = (name: string) => Object.assign(new Blob(["bytes"], { type: "image/jpeg" }), { name, lastModified: 1 }) as File;
 const videoFile = (name: string) => Object.assign(new Blob(["video"], { type: "video/webm" }), { name, lastModified: 1 }) as File;
@@ -13,6 +13,28 @@ test("camera reel marker applies to one through six all-video camera groups", ()
   assert.equal(isCameraClipReelSelection([videoFile("one.webm"), videoFile("two.webm")]), true);
   assert.equal(isCameraClipReelSelection([videoFile("one.webm"), file("photo.jpg")]), false);
   assert.equal(isCameraClipReelSelection(Array.from({ length: 7 }, (_, index) => videoFile(`${index}.webm`))), false);
+});
+
+test("camera stitching retry restores its dedicated order and recovers legacy upload slots", () => {
+  assert.equal(isValidCameraReelAssetIds([71, 70]), true);
+  assert.equal(isValidCameraReelAssetIds([71, 71]), false);
+  assert.deepEqual(recoverStudioCameraReelAssetIds({
+    cameraReelAssetIds: [71, 70],
+    publishAssetIds: [70],
+    uploadedMediaAssetIds: [70, 71],
+  }, [1, 0]), [71, 70], "the posted Spark keeps its own source order after draft edits");
+  assert.deepEqual(recoverStudioCameraReelAssetIds({
+    publishAssetIds: [71, 70, 90],
+    uploadedMediaAssetIds: [70, 71],
+  }, [1, 0]), [71, 70], "legacy drafts prefer the committed publication order and exclude trailing music");
+  assert.deepEqual(recoverStudioCameraReelAssetIds({
+    publishAssetIds: [71],
+    uploadedMediaAssetIds: [70, 71],
+  }, [1, 0]), [71, 70], "legacy drafts can recover a missing ordered list from file-indexed upload IDs");
+  assert.deepEqual(recoverStudioCameraReelAssetIds({
+    publishAssetIds: [71],
+    uploadedMediaAssetIds: [0, 0],
+  }, [1, 0]), [], "incomplete assets are never sent to the stitching endpoint");
 });
 
 test("camera reel playback URL stays same-origin and query-free for native Range streaming", () => {
@@ -156,6 +178,7 @@ test("camera composition network failures retain the published Spark ID for retr
       }),
       (reason: unknown) => reason instanceof CameraClipReelPendingError
         && reason.storyId === 917
+        && JSON.stringify(reason.mediaAssetIds) === JSON.stringify([71])
         && /Network disconnected/.test(reason.message),
     );
   } finally {
@@ -396,6 +419,32 @@ test("failed publication does not remove a recoverable user-scoped draft", async
     assert.deepEqual((await loadStudioDraft(73, null) as (StudioDraft & MomentStudioAccessibilityDraft) | null)?.momentAltTexts, { 0: "First attachment", 1: "Second attachment" });
     assert.equal((await loadStudioDraft(74, null)), null);
     assert.equal((await loadStudioDraft(73, 88)), null);
+
+    const cameraDraft: StudioDraft = {
+      ...draft,
+      files: [videoFile("camera-one.webm"), videoFile("camera-two.webm")],
+      selection: [1, 0],
+      attemptedSignature: "camera-signature",
+      cameraReelAssetIds: [71, 70],
+    };
+    await persistStudioPublishAttempt(cameraDraft, [1, 0], [71, 70]);
+    assert.deepEqual((await loadStudioDraft(73, null))?.cameraReelAssetIds, [71, 70]);
+    await assert.rejects(
+      persistStudioPublishAttempt({ ...cameraDraft, cameraReelAssetIds: [70, 71] }, [1, 0], [71, 70]),
+      /upload sequence could not be saved safely/i,
+    );
+
+    const pendingOnlyDraft: StudioDraft = {
+      ...draft,
+      files: [],
+      selection: [],
+      caption: "",
+      elements: [],
+      cameraReelAssetIds: [71, 70],
+      cameraReelStoryId: 915,
+    };
+    await persistStudioDraft(pendingOnlyDraft);
+    assert.equal((await loadStudioDraft(73, null))?.cameraReelStoryId, 915, "a pending stitch keeps its recovery draft even after editable media is cleared");
 
     // A lost response after the server commits must leave the exact ordered
     // asset IDs and publish key durable before POST. Reload then retries the

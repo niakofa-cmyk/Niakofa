@@ -30,7 +30,7 @@ import {
   type MomentStudioAccessibilityDraft,
 } from "./moment-studio-accessibility";
 import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
-import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, loadStudioDraft, newStudioPublishId, persistStudioPublishAttempt, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "./story-studio-draft";
+import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, isValidCameraReelAssetIds, loadStudioDraft, newStudioPublishId, persistStudioPublishAttempt, recoverStudioCameraReelAssetIds, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "./story-studio-draft";
 import { CameraClipReelPendingError, chooseStudioFiles, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validateStudioFiles } from "./story-studio-publish";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { getExchangeListings } from "@/lib/community-exchange-client";
@@ -228,6 +228,7 @@ export function CommunityStoryRail({
   const [uploadedIds, setUploadedIds] = useState<Array<number | null>>([]);
   const uploadedIdsRef = useRef<Array<number | null>>([]);
   const publishAssetIdsRef = useRef<number[]>([]);
+  const cameraReelAssetIdsRef = useRef<number[]>([]);
   const [trimPreview, setTrimPreview] = useState<Record<number, { start: number; end: number }>>({});
   const [coverTimes, setCoverTimes] = useState<Record<number, number>>({});
   const exchangeDraftRef = useRef<{ id: number; listingId: string; fingerprint: string } | null>(null);
@@ -453,6 +454,7 @@ export function CommunityStoryRail({
     publishAttemptRef.current = null;
     uploadedIdsRef.current = [];
     publishAssetIdsRef.current = [];
+    cameraReelAssetIdsRef.current = [];
     const empty = emptyStudioScope(hubId);
     setDraftReady(false);
     setDraftSaved(false);
@@ -520,6 +522,7 @@ export function CommunityStoryRail({
         || draft.exchangeDraftId
         || draft.uploadedMediaAssetIds?.some((id) => id > 0)
         || draft.publishAssetIds?.length
+        || draft.cameraReelAssetIds?.length
         || draft.attemptedSignature
         || extendedDraft?.cameraClipReel
         || extendedDraft?.cameraReelStoryId
@@ -537,6 +540,7 @@ export function CommunityStoryRail({
         publishAttemptRef.current = draft.attemptedSignature ?? null;
         uploadedIdsRef.current = draft.uploadedMediaAssetIds ?? [];
         publishAssetIdsRef.current = draft.publishAssetIds ?? [];
+        cameraReelAssetIdsRef.current = recoverStudioCameraReelAssetIds(draft, draft.selection ?? []);
         setFiles(draft.files ?? []);
         const recoveredFiles = draft.files ?? [];
         const recoveredSelection = draft.selection ?? [];
@@ -622,6 +626,7 @@ export function CommunityStoryRail({
     clientPublishId: clientPublishIdRef.current,
     attemptedSignature: publishAttemptRef.current ?? undefined,
     publishAssetIds: publishAssetIdsRef.current,
+    cameraReelAssetIds: cameraReelAssetIdsRef.current,
     effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes,
     musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId,
     uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
@@ -669,6 +674,7 @@ export function CommunityStoryRail({
     clientPublishIdRef.current = newStudioPublishId();
     uploadedIdsRef.current = [];
     publishAssetIdsRef.current = [];
+    if (pendingCameraReelStoryId === null) cameraReelAssetIdsRef.current = [];
     setUploadedMusicAssetId(null);
     draftWriteVersionRef.current++;
     setUploadedIds([]);
@@ -688,9 +694,9 @@ export function CommunityStoryRail({
     if (!isCameraClipReelSelection(currentFiles)
       || JSON.stringify(cameraClipReelMarker.orderedFingerprints) !== JSON.stringify(currentFiles.map(studioFileFingerprint))) {
       setCameraClipReelMarker(null);
-      setPendingCameraReelStoryId(null);
+      if (pendingCameraReelStoryId === null) cameraReelAssetIdsRef.current = [];
     }
-  }, [cameraClipReelMarker, files, gallerySelection]);
+  }, [cameraClipReelMarker, files, gallerySelection, pendingCameraReelStoryId]);
   useEffect(() => {
     if (!draftReady || draftRecoveryFailed || !userId || activeScopeRef.current !== scopeKey || recoveredScopeRef.current !== scopeKey) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -924,6 +930,7 @@ export function CommunityStoryRail({
     publishAttemptRef.current = null;
     uploadedIdsRef.current = [];
     publishAssetIdsRef.current = [];
+    cameraReelAssetIdsRef.current = [];
     setExchangeListingsError("");
     setUploadedIds([]);
     setTrimPreview({});
@@ -1077,6 +1084,10 @@ export function CommunityStoryRail({
   };
 
   const publish = async () => {
+    if (pendingCameraReelStoryId !== null) {
+      setError("This Spark is already posted. Retry its camera stitching before publishing another Spark.");
+      return;
+    }
     if (trimming) {
       setError("Wait for video trimming to finish before publishing.");
       return;
@@ -1373,11 +1384,20 @@ export function CommunityStoryRail({
           if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
           draftWriteVersionRef.current++;
           const musicAssetId = musicFile ? orderedAssetIds[orderedAssetIds.length - 1] : null;
+          const cameraReelAssetIds = !overMomentLimit && validCameraClipReel
+            ? orderedAssetIds.slice(0, momentFiles.length)
+            : [];
+          if (cameraReelAssetIds.length > 0
+            && (!isValidCameraReelAssetIds(cameraReelAssetIds) || cameraReelAssetIds.length !== momentFiles.length)) {
+            throw new Error("The ordered camera assets could not be saved safely. Nothing was posted.");
+          }
+          cameraReelAssetIdsRef.current = cameraReelAssetIds;
           publishAssetIdsRef.current = [...orderedAssetIds];
           const frozen: StudioDraft = { ...attemptSnapshot, clientPublishId: attemptId, attemptedSignature: attemptSignature,
             uploadedMediaAssetIds: files.map((_, index) => uploadedIdsRef.current[index] ?? 0),
             uploadedMusicAssetId: musicAssetId,
-            publishAssetIds: [...orderedAssetIds] };
+            publishAssetIds: [...orderedAssetIds],
+            cameraReelAssetIds: [...cameraReelAssetIds] };
           draftQueueRef.current = draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-recovery")).then(async () => {
           const durable = await persistStudioPublishAttempt(frozen, momentSourceIndexes, orderedAssetIds, musicAssetId);
             if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, durable);
@@ -1408,17 +1428,31 @@ export function CommunityStoryRail({
         setPendingCameraReelStoryId(reason.storyId);
         setError(reason.message);
         setRefreshNonce((value) => value + 1);
+        cameraReelAssetIdsRef.current = isValidCameraReelAssetIds(reason.mediaAssetIds)
+          ? [...reason.mediaAssetIds]
+          : recoverStudioCameraReelAssetIds(snapshotRef.current(), gallerySelection);
         const pendingSnapshot: ExtendedStudioDraft = {
           ...snapshotRef.current(),
           cameraClipReel: cameraClipReelMarker,
           cameraReelStoryId: reason.storyId,
+          cameraReelAssetIds: [...cameraReelAssetIdsRef.current],
         };
         if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, pendingSnapshot);
         draftQueueRef.current = draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-recovery")).then(() => saveStudioDraft(pendingSnapshot));
         try {
           await draftQueueRef.current;
+          setDraftSaved(true);
+          setDraftError("");
         } catch (saveReason: unknown) {
-          setDraftError(saveReason instanceof Error ? saveReason.message : "The posted Spark's stitching retry could not be saved on this device.");
+          const detail = saveReason instanceof Error ? saveReason.message : "The posted Spark's stitching retry could not be saved on this device.";
+          setDraftSaved(false);
+          setDraftError(detail);
+          setError(`${reason.message} The retry draft could not be saved locally. Keep this Studio open and retry stitching before leaving.`);
+          return;
+        }
+        if (!isValidCameraReelAssetIds(cameraReelAssetIdsRef.current)) {
+          setError("Spark posted but stitching is pending. The saved ordered camera assets are incomplete; the draft is kept open so you can try again.");
+          return;
         }
         window.dispatchEvent(new Event("community-moments-refresh"));
         setComposerOpen(false);
@@ -1437,9 +1471,9 @@ export function CommunityStoryRail({
   };
 
   const retryCameraClipStitching = async () => {
-    if (!pendingCameraReelStoryId || !validCameraClipReel || !userId || publishing) return;
-    const cameraAssetIds = publishAssetIdsRef.current.slice(0, selectedFiles.length);
-    if (cameraAssetIds.length !== selectedFiles.length) {
+    if (!pendingCameraReelStoryId || !userId || publishing) return;
+    const cameraAssetIds = cameraReelAssetIdsRef.current;
+    if (!isValidCameraReelAssetIds(cameraAssetIds)) {
       setError("Spark posted but stitching is pending. The saved ordered camera assets are incomplete; keep this draft and try again.");
       return;
     }
@@ -1449,6 +1483,26 @@ export function CommunityStoryRail({
     setPublishStatus("Retrying camera clip stitching…");
     setError(null);
     try {
+      const retrySnapshot: ExtendedStudioDraft = {
+        ...snapshotRef.current(),
+        cameraReelStoryId: pendingCameraReelStoryId,
+        cameraReelAssetIds: [...cameraAssetIds],
+      };
+      if (scopeKey) scopeSnapshotsRef.current.set(scopeKey, retrySnapshot);
+      draftQueueRef.current = draftQueueRef.current
+        .catch(reportClientSideEffectFailure("community.story-studio.draft-recovery"))
+        .then(() => saveStudioDraft(retrySnapshot));
+      try {
+        await draftQueueRef.current;
+        setDraftSaved(true);
+        setDraftError("");
+      } catch (saveReason: unknown) {
+        const detail = saveReason instanceof Error ? saveReason.message : "The stitching recovery draft could not be saved on this device.";
+        setDraftSaved(false);
+        setDraftError(detail);
+        setError(`Spark posted, but stitching is pending. The recovery draft could not be saved locally. Keep this Studio open and retry again.`);
+        return;
+      }
       await requestCameraClipReel(pendingCameraReelStoryId, cameraAssetIds, controller.signal);
       draftGenerationRef.current++;
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -1470,7 +1524,7 @@ export function CommunityStoryRail({
 
   const selectStudioFiles = (incoming: File[]) => {
     setCameraClipReelMarker(null);
-    setPendingCameraReelStoryId(null);
+    if (pendingCameraReelStoryId === null) cameraReelAssetIdsRef.current = [];
     const { files: selected, errors } = chooseStudioFiles([...files, ...incoming]);
     if (errors.length) setError(errors[0]);
     if (selected.length) {
@@ -1524,6 +1578,10 @@ export function CommunityStoryRail({
   };
 
   const discardDraft = async () => {
+    if (pendingCameraReelStoryId !== null) {
+      setError("This Spark is already posted. Retry camera stitching before discarding its recovery draft.");
+      return;
+    }
     if (!userId || !window.confirm(exchangeDraftRef.current
       ? "Discard this Spark? If its Exchange video is still a draft, it will also be removed from the server. A Spark already published cannot be undone here."
       : "Discard this Spark and its saved media? This cannot be undone.")) return;
@@ -1576,7 +1634,7 @@ export function CommunityStoryRail({
 
   const toggleGallerySelection = (index: number) => {
     setCameraClipReelMarker(null);
-    setPendingCameraReelStoryId(null);
+    if (pendingCameraReelStoryId === null) cameraReelAssetIdsRef.current = [];
     setPreviewFileIndex(index);
     setGallerySelection((current) => current.includes(index)
       ? current.filter((item) => item !== index)
@@ -1837,13 +1895,13 @@ export function CommunityStoryRail({
               <div className="nia-story-composer__form">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-white/75" aria-live="polite">
                   <span>{draftReady ? draftError ? "Local save unavailable" : draftSaved ? "Draft saved on this device" : "Saving draft…" : "Recovering your draft…"}</span>
-                  {(files.length > 0 || caption.trim() || momentAccessibility.momentTagsInput.trim() || exchangeDraftRef.current) && <button type="button" className="rounded-lg border border-white/30 px-3 py-2 font-semibold" onClick={() => void discardDraft()} disabled={publishing} data-testid="button-discard-studio-draft">Discard draft</button>}
+                  {(files.length > 0 || caption.trim() || momentAccessibility.momentTagsInput.trim() || exchangeDraftRef.current) && <button type="button" className="rounded-lg border border-white/30 px-3 py-2 font-semibold" onClick={() => void discardDraft()} disabled={publishing || pendingCameraReelStoryId !== null} data-testid="button-discard-studio-draft">Discard draft</button>}
                 </div>
                 {draftError && <p role="alert" className="mb-2 rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-xs text-amber-100">{draftError} Keep this tab open or try editing again to save.</p>}
                 {error && <p role="alert" className="mb-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{error}</p>}
                 {checkingStudioDuration && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">Checking selected video lengths…</p>}
                 {validCameraClipReel && <p role="status" className="mb-2 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs">These camera-recorded clips will be stitched into one Spark video after publishing. Choosing or changing media clears this camera-only marker.</p>}
-                {pendingCameraReelStoryId !== null && <button type="button" onClick={() => void retryCameraClipStitching()} disabled={publishing || !validCameraClipReel} className="mb-3 min-h-10 rounded-xl border border-amber-300/50 px-4 text-xs font-bold text-amber-100 disabled:opacity-50" data-testid="button-retry-camera-reel">Retry stitching — Spark already posted</button>}
+                {pendingCameraReelStoryId !== null && <button type="button" onClick={() => void retryCameraClipStitching()} disabled={publishing} className="mb-3 min-h-10 rounded-xl border border-amber-300/50 px-4 text-xs font-bold text-amber-100 disabled:opacity-50" data-testid="button-retry-camera-reel">Retry stitching — Spark already posted</button>}
                 {publishing && publishStatus && <div role="status" aria-live="polite" className="mb-3 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs"><p>{publishStatus}{publishProgress ? ` ${publishProgress}%` : ""}</p>{publishProgress > 0 && <progress aria-label="Spark upload progress" value={publishProgress} max={100} className="mt-2 w-full" />}<button type="button" className="mt-2 min-h-10 rounded-lg border border-white/20 px-3 font-bold" onClick={() => publishControllerRef.current?.abort()}>Cancel upload</button></div>}
                 {studioStep === "destination" ? <>
                   <div className="nia-story-destination-intro"><p className="nia-story-kicker">The final step</p><h2>Where should<br /><em>this Spark land?</em></h2><p>Choose who gets to see your moment before it goes live.</p></div>
@@ -1972,7 +2030,7 @@ export function CommunityStoryRail({
                           preserveFamilyStoryArchiveOnTrimRef.current = familyStoryOriginalArchivedRef.current;
                           setFiles(nextFiles);
                           setCameraClipReelMarker(null);
-                          setPendingCameraReelStoryId(null);
+                          if (pendingCameraReelStoryId === null) cameraReelAssetIdsRef.current = [];
                           const nextIds = [...uploadedIdsRef.current]; nextIds[previewFileIndex] = null;
                           uploadedIdsRef.current = nextIds;
                           publishAssetIdsRef.current = [];
@@ -2166,7 +2224,7 @@ export function CommunityStoryRail({
                  </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <p className="text-[10px] leading-relaxed text-white/55">Original audio is preserved. Apply trim to replace the clip before upload; visual effects remain preview-only. Text and stickers stay with your Spark.</p>
-                  {files.length > 0 && <button type="button" disabled={trimming} onClick={() => { setFiles([]); setGallerySelection([]); setCameraClipReelMarker(null); setPendingCameraReelStoryId(null); setMomentAccessibility((current) => ({ ...current, momentAltTexts: {}, momentCaptionsVtt: {} })); setTrimPreview({}); setCoverTimes({}); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
+                  {files.length > 0 && <button type="button" disabled={trimming} onClick={() => { setFiles([]); setGallerySelection([]); setCameraClipReelMarker(null); if (pendingCameraReelStoryId === null) cameraReelAssetIdsRef.current = []; setMomentAccessibility((current) => ({ ...current, momentAltTexts: {}, momentCaptionsVtt: {} })); setTrimPreview({}); setCoverTimes({}); }} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-white/20 px-3 text-xs font-bold"><Trash2 className="h-4 w-4" /> Clear</button>}
                 </div>
                 </>}
               </div>
@@ -2242,7 +2300,7 @@ export function CommunityStoryRail({
           thumbnails={galleryThumbnails}
           selected={gallerySelection}
           onSelect={(id) => toggleGallerySelection(Number(id))}
-          onMultiple={() => { setCameraClipReelMarker(null); setPendingCameraReelStoryId(null); setGallerySelection(files.map((_, index) => index)); }}
+          onMultiple={() => { setCameraClipReelMarker(null); if (pendingCameraReelStoryId === null) cameraReelAssetIdsRef.current = []; setGallerySelection(files.map((_, index) => index)); }}
           onClose={() => setGalleryOpen(false)}
           onCamera={() => { if (!trimming) { setGalleryOpen(false); setCameraOpen(true); } }}
           onChooseFiles={() => galleryInput.current?.click()}

@@ -89,7 +89,7 @@
 - [Moment retention and responses](niakofa-moment-retention.md) — private archives are opt-in and creator-deletable; featuring and attributed video responses must preserve Community boundaries.
 - [Spark deletion audit boundary](exchange-spark-audit-boundary.md) — distinguish a user’s pending delete request from worker-confirmed row removal; audit only identifiers, outcomes, and safe reasons.
 - [Story deletion rate-limit boundary](story-cleanup-rate-limit.md) — send one owner DELETE, require `deleted: true`, and verify the owner feed and exact media records; never spin on 429.
-- [Spark camera draft gating](spark-camera-draft-gating.md) — auto-open only after successful scoped recovery; distinguish restored drafts from later autosaves.
+- [Spark camera draft gating](spark-camera-draft-gating.md) — gate camera entry on scoped recovery and keep posted stitch retries tied to immutable ordered source IDs.
 - [Spark mobile preview verification](spark-studio-canvas-layout.md) — DOM-visible caption text can still sit in a collapsed canvas; verify 9:16 bounds and full caption containment at phone size.
 - [Railway log attribute decoding](railway-log-attribute-decoding.md) — scope below the 1 MB response cap, decode JSON-quoted values, and validate allowlisted diagnostics.
 - [Workspace scanner long lines](workspace-scanner-long-lines.md) — a checkpoint `token too long` scan failure may come from tracked, ignored generated bundles as well as workspace secrets.

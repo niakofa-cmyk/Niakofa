@@ -77,11 +77,13 @@ export function validateMomentCompositionPlaybackUrl(playbackUrl: string, storyI
 
 export class CameraClipReelPendingError extends Error {
   readonly storyId: number;
+  readonly mediaAssetIds: number[];
 
-  constructor(storyId: number, message: string) {
+  constructor(storyId: number, message: string, mediaAssetIds: number[] = []) {
     super(`Spark posted, but stitching is pending. ${message}`);
     this.name = "CameraClipReelPendingError";
     this.storyId = storyId;
+    this.mediaAssetIds = [...mediaAssetIds];
   }
 }
 
@@ -101,11 +103,11 @@ export async function requestCameraClipReel(storyId: number, mediaAssetIds: numb
     error?: string;
     composition?: { status?: string; playback_grant_url?: string; status_url?: string };
   };
-  if (!response.ok) throw new CameraClipReelPendingError(storyId, result.error || "Retry stitching from the saved Studio draft.");
+  if (!response.ok) throw new CameraClipReelPendingError(storyId, result.error || "Retry stitching from the saved Studio draft.", mediaAssetIds);
   if (!result.composition || typeof result.composition.status !== "string"
     || result.composition.playback_grant_url !== `/api/community/stories/${storyId}/moment-composition/playback-grant`
     || result.composition.status_url !== `/api/community/stories/${storyId}/moment-composition`) {
-    throw new CameraClipReelPendingError(storyId, "The server returned an invalid stitching response. Retry safely from the saved Studio draft.");
+    throw new CameraClipReelPendingError(storyId, "The server returned an invalid stitching response. Retry safely from the saved Studio draft.", mediaAssetIds);
   }
   return result.composition.status;
 }
@@ -337,7 +339,11 @@ export async function publishStudioMoment(input: {
       await requestCameraClipReel(storyId!, ids.slice(0, input.files.length), input.signal);
     } catch (reason) {
       if (reason instanceof CameraClipReelPendingError) throw reason;
-      throw new CameraClipReelPendingError(storyId!, reason instanceof Error ? reason.message : "Retry stitching from the saved Studio draft.");
+      throw new CameraClipReelPendingError(
+        storyId!,
+        reason instanceof Error ? reason.message : "Retry stitching from the saved Studio draft.",
+        ids.slice(0, input.files.length),
+      );
     }
   }
   return storyId!;
