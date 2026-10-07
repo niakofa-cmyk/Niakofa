@@ -115,12 +115,12 @@ const mediaGuides: Record<ControlKey, {
   },
   moments: {
     title: "Sparks · Community Moments",
-    status: "Archive, feature, or remove",
+    status: "Delete from any owner view",
     summary: "The current creator surface does not offer editing for a published Moment.",
     points: [
-      "You can archive a published Moment, feature or unfeature it, and toggle whether video responses are allowed.",
-      "Permanent deletion is offered from the private archive, after the Moment has been archived.",
-      "A private archive is opt-in; it is separate from Family Stories and account history.",
+      "You can archive a published Moment for private retention, feature or unfeature it, and toggle whether video responses are allowed.",
+      "You can request deletion of your own Moment directly from Published, Archive, or Featured; archiving first is optional.",
+      "Niakofa confirms deletion only after stored media cleanup and Moment removal. If processing or cleanup fails, the Moment remains for retry.",
     ],
   },
   exchange: {
@@ -338,9 +338,9 @@ function MomentCard({
                   <Star className={`h-4 w-4 ${moment.featured ? "fill-current text-[#f4d58b]" : "text-[#f4d58b]"}`} />
                   {moment.featured ? "Remove from featured" : "Feature on profile"}
                 </button>
-                {view === "archive" && !deleteConfirm && (
+                {!deleteConfirm && (
                   <button type="button" onClick={onDeletePrompt} className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-bold text-[#ff9d8d] hover:bg-[#ff5a5f]/10">
-                    <Trash2 className="h-4 w-4" /> Delete archived Moment
+                    <Trash2 className="h-4 w-4" /> Delete Moment
                   </button>
                 )}
               </div>
@@ -354,12 +354,12 @@ function MomentCard({
             <div className="flex items-start gap-2.5">
               <Trash2 className="mt-0.5 h-4 w-4 shrink-0 text-[#ff9d8d]" />
               <div>
-                <p className="text-xs font-extrabold text-[#fff2ed]">Delete this archived Moment?</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-[#c4b5b7]">Its saved media will be removed permanently. This can’t be undone.</p>
+                <p className="text-xs font-extrabold text-[#fff2ed]">Delete this Moment?</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-[#c4b5b7]">This removes the Moment from its audience and deletes its stored media. Niakofa confirms removal only after cleanup; if cleanup is blocked or fails, the Moment stays for retry. This can’t be undone.</p>
               </div>
             </div>
             <div className="mt-3 flex gap-2">
-              <button type="button" onClick={onDelete} className="min-h-10 rounded-xl bg-[#ff7b70] px-3 text-[11px] font-extrabold text-[#241714]">Delete permanently</button>
+              <button type="button" onClick={onDelete} className="min-h-10 rounded-xl bg-[#ff7b70] px-3 text-[11px] font-extrabold text-[#241714]">Delete Moment</button>
               <button type="button" onClick={onCancelDelete} className="min-h-10 rounded-xl border border-white/15 px-3 text-[11px] font-bold text-[#e2eaf0] hover:bg-white/[.06]">Keep Moment</button>
             </div>
           </div>
@@ -614,7 +614,7 @@ export function ActivityProfile() {
                         onDelete={() => {
                           setMoments((items) => items.filter((item) => item.id !== moment.id));
                           setDeleteId(null);
-                          notify("Archived Moment deleted");
+                          notify("Moment removed from this preview");
                         }}
                         onCancelDelete={() => setDeleteId(null)}
                       />
