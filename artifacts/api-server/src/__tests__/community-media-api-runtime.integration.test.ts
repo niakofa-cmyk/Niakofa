@@ -10,7 +10,7 @@ import request from "supertest";
 import { pool } from "@workspace/db";
 import { parseAuth, signTokenById } from "../middlewares/auth";
 import { mediaUploadParser } from "../lib/media-upload-parser";
-import { isCloudStorageConfigured, deleteAssetStrict, UPLOADS_BASE } from "../lib/storage";
+import { isCloudStorageConfigured, deleteAssetStrict, putAsset, UPLOADS_BASE } from "../lib/storage";
 import { setMediaProcessingQueueForTest } from "../lib/queue";
 import audioCirclesRouter from "../routes/audio-circles";
 import communityExchangeRouter from "../routes/community-exchange";
@@ -95,6 +95,7 @@ suite("isolated cross-community content and media access matrix", () => {
   let readerHubName = "";
   let communityStoryId: number | undefined;
   let videoStoryId: number | undefined;
+  let momentCompositionStoryId: number | undefined;
   let videoUploadMarker: string | undefined;
   let familyId: number | undefined;
   let exchangeListingId: number | undefined;
@@ -193,6 +194,9 @@ suite("isolated cross-community content and media access matrix", () => {
     }
     if (videoStoryId) {
       await attempt("DELETE FROM community_stories WHERE id = $1", [videoStoryId]);
+    }
+    if (momentCompositionStoryId) {
+      await attempt("DELETE FROM community_stories WHERE id = $1", [momentCompositionStoryId]);
     }
     for (const mediaAssetId of mediaAssetIds) {
       await attempt("DELETE FROM media_assets WHERE id = $1", [mediaAssetId]);
@@ -1123,5 +1127,229 @@ suite("isolated cross-community content and media access matrix", () => {
       .post(`/audio-spiral-sessions/${spiralSessionId}/end`)
       .set("Authorization", `Bearer ${authorToken}`);
     expect(ended.status).toBe(200);
+  });
+
+  it("keeps a review-pending Moment private and resumes its same ordered stitch after failure", async () => {
+    const createdStory = await request(app)
+      .post("/community/stories")
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ caption: `Pending stitch fixture ${randomUUID()}`, audience: "community" });
+    expect(createdStory.status).toBe(201);
+    momentCompositionStoryId = createdStory.body.story.id as number;
+    expect(Number.isSafeInteger(momentCompositionStoryId)).toBe(true);
+    await pool.query(
+      "UPDATE community_stories SET status = 'pending' WHERE id = $1",
+      [momentCompositionStoryId],
+    );
+
+    const video = await createSyntheticVideo();
+    const sourceIds: number[] = [];
+    for (let index = 0; index < 2; index += 1) {
+      const storageKey = `runtime-fixture/moment-compose/${randomUUID()}.mp4`;
+      await putAsset(storageKey, video, "video/mp4");
+      const { rows } = await pool.query<{ id: number }>(
+        `INSERT INTO media_assets
+           (owner_user_id, context_kind, context_id, media_type, mime_type,
+            original_key, variant_key, byte_size, width, height, duration_ms, status)
+         VALUES ($1, 'story', $2, 'video', 'video/mp4', $3, $3, $4, 320, 180, 1000, 'ready')
+         RETURNING id`,
+        [authorId, momentCompositionStoryId, storageKey, video.length],
+      );
+      const sourceId = rows[0].id;
+      sourceIds.push(sourceId);
+      mediaAssetIds.push(sourceId);
+      await pool.query(
+        `INSERT INTO community_story_media
+           (story_id, storage_key, media_type, mime_type, byte_size, duration_ms, width, height, media_asset_id)
+         VALUES ($1, $2, 'video', 'video/mp4', $3, 1000, 320, 180, $4)`,
+        [momentCompositionStoryId, storageKey, video.length, sourceId],
+      );
+    }
+    const orderedSourceIds = [sourceIds[1], sourceIds[0]];
+    if (orderedSourceIds.some((id) => id === undefined)) {
+      throw new Error("The pending stitch fixture did not create two ordered source videos.");
+    }
+
+    const [authorFeed, sameCommunityFeed, crossCommunityFeed] = await Promise.all([
+      request(app).get("/community/stories").set("Authorization", `Bearer ${authorToken}`),
+      request(app).get("/community/stories").set("Authorization", `Bearer ${sameCommunityReaderToken}`),
+      request(app).get("/community/stories").set("Authorization", `Bearer ${readerToken}`),
+    ]);
+    for (const feed of [authorFeed, sameCommunityFeed, crossCommunityFeed]) {
+      expect(feed.status).toBe(200);
+    }
+    const ownerPendingStory = authorFeed.body.stories.find(
+      (story: { id: number }) => story.id === momentCompositionStoryId,
+    );
+    expect(ownerPendingStory?.status).toBe("pending");
+    for (const feed of [sameCommunityFeed, crossCommunityFeed]) {
+      expect(feed.body.stories.some(
+        (story: { id: number }) => story.id === momentCompositionStoryId,
+      )).toBe(false);
+    }
+
+    const queuedJobs: Array<{ name: string; data: MediaJobData }> = [];
+    const restoreQueue = setMediaProcessingQueueForTest({
+      add: async (name: string, data: MediaJobData) => {
+        queuedJobs.push({ name, data });
+        return undefined;
+      },
+    } as unknown as Parameters<typeof setMediaProcessingQueueForTest>[0]);
+    try {
+      const nonOwnerRequest = await withMediaPlatformEnabled(() => request(app)
+        .post(`/community/stories/${momentCompositionStoryId}/moment-composition`)
+        .set("Authorization", `Bearer ${sameCommunityReaderToken}`)
+        .send({ intent: "camera_clip_reel", media_asset_ids: orderedSourceIds }));
+      expect(nonOwnerRequest.status).toBe(404);
+      expect(queuedJobs).toHaveLength(0);
+
+      const initialRequest = await withMediaPlatformEnabled(() => request(app)
+        .post(`/community/stories/${momentCompositionStoryId}/moment-composition`)
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({ intent: "camera_clip_reel", media_asset_ids: orderedSourceIds }));
+      expect(initialRequest.status).toBe(202);
+      expect(initialRequest.body.composition.status).toBe("queued");
+      expect(queuedJobs).toHaveLength(1);
+
+      const { rows: initialCompositions } = await pool.query<{
+        derived_media_asset_id: number;
+        source_media_asset_ids: number[];
+        status: string;
+      }>(
+        `SELECT derived_media_asset_id, source_media_asset_ids, status
+         FROM community_story_moment_compositions WHERE story_id = $1`,
+        [momentCompositionStoryId],
+      );
+      expect(initialCompositions).toHaveLength(1);
+      const derivedMediaAssetId = initialCompositions[0].derived_media_asset_id;
+      mediaAssetIds.push(derivedMediaAssetId);
+      expect(initialCompositions[0]).toMatchObject({
+        source_media_asset_ids: orderedSourceIds,
+        status: "queued",
+      });
+
+      const privateStatus = await withMediaPlatformEnabled(() => request(app)
+        .get(`/community/stories/${momentCompositionStoryId}/moment-composition`)
+        .set("Authorization", `Bearer ${authorToken}`));
+      expect(privateStatus.status).toBe(200);
+      expect(privateStatus.body.composition).toMatchObject({
+        status: "queued",
+        source_count: 2,
+        source_media_asset_ids: orderedSourceIds,
+      });
+      const hiddenStatus = await withMediaPlatformEnabled(() => request(app)
+        .get(`/community/stories/${momentCompositionStoryId}/moment-composition`)
+        .set("Authorization", `Bearer ${sameCommunityReaderToken}`));
+      expect(hiddenStatus.status).toBe(404);
+
+      // Simulate a worker failure after the durable request was saved. The
+      // exact retry must reuse its derived asset; reordered IDs must conflict.
+      await pool.query(
+        `UPDATE community_story_moment_compositions
+         SET status = 'failed', failure_code = 'TEST_RETRY'
+         WHERE story_id = $1`,
+        [momentCompositionStoryId],
+      );
+      await pool.query(
+        "UPDATE media_assets SET status = 'failed', failure_reason = 'TEST_RETRY' WHERE id = $1",
+        [derivedMediaAssetId],
+      );
+      await pool.query(
+        `UPDATE media_processing_jobs
+         SET status = 'failed', attempts = 1, error = 'TEST_RETRY', completed_at = NOW()
+         WHERE media_asset_id = $1 AND job_type = 'moment_compose'`,
+        [derivedMediaAssetId],
+      );
+
+      const reorderedRequest = await withMediaPlatformEnabled(() => request(app)
+        .post(`/community/stories/${momentCompositionStoryId}/moment-composition`)
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({ intent: "camera_clip_reel", media_asset_ids: [...orderedSourceIds].reverse() }));
+      expect(reorderedRequest.status).toBe(409);
+      expect(queuedJobs).toHaveLength(1);
+
+      const retryRequest = await withMediaPlatformEnabled(() => request(app)
+        .post(`/community/stories/${momentCompositionStoryId}/moment-composition`)
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({ intent: "camera_clip_reel", media_asset_ids: orderedSourceIds }));
+      expect(retryRequest.status).toBe(202);
+      expect(retryRequest.body.composition.status).toBe("queued");
+      expect(queuedJobs).toHaveLength(2);
+
+      const latestJob = queuedJobs.at(-1);
+      if (!latestJob) throw new Error("The same-source retry did not enqueue its composition job.");
+      expect(latestJob.data).toMatchObject({
+        jobType: "moment_compose",
+        mediaAssetId: derivedMediaAssetId,
+      });
+      await withMediaPlatformEnabled(() => processMediaJob({
+        id: `runtime-moment-compose-${derivedMediaAssetId}`,
+        data: latestJob.data,
+        attemptsMade: 0,
+      } as unknown as Parameters<typeof processMediaJob>[0]));
+
+      const { rows: completedCompositions } = await pool.query<{
+        composition_status: string;
+        job_status: string;
+        attempts: number;
+        asset_status: string;
+        variant_key: string | null;
+        duration_ms: number | null;
+        source_media_asset_ids: number[];
+      }>(
+        `SELECT composition.status AS composition_status,
+                job.status AS job_status, job.attempts,
+                asset.status AS asset_status, asset.variant_key, asset.duration_ms,
+                composition.source_media_asset_ids
+         FROM community_story_moment_compositions composition
+         JOIN media_processing_jobs job
+           ON job.media_asset_id = composition.derived_media_asset_id
+          AND job.job_type = 'moment_compose'
+         JOIN media_assets asset ON asset.id = composition.derived_media_asset_id
+         WHERE composition.story_id = $1`,
+        [momentCompositionStoryId],
+      );
+      expect(completedCompositions).toHaveLength(1);
+      const completed = completedCompositions[0];
+      expect(completed).toMatchObject({
+        composition_status: "ready",
+        job_status: "completed",
+        attempts: 2,
+        asset_status: "ready",
+        source_media_asset_ids: orderedSourceIds,
+      });
+      expect(completed.variant_key).toBeTruthy();
+      if (completed.duration_ms === null || completed.duration_ms <= 0) {
+        throw new Error("The retried stitch did not record a positive playback duration.");
+      }
+      if (!completed.variant_key) throw new Error("The retried stitch did not produce a playable variant.");
+      expect(existsSync(path.resolve(UPLOADS_BASE, completed.variant_key))).toBe(true);
+
+      const [readyOwnerStatus, finalAuthorFeed, finalReaderFeed, hiddenMedia] = await Promise.all([
+        withMediaPlatformEnabled(() => request(app)
+          .get(`/community/stories/${momentCompositionStoryId}/moment-composition`)
+          .set("Authorization", `Bearer ${authorToken}`)),
+        request(app).get("/community/stories").set("Authorization", `Bearer ${authorToken}`),
+        request(app).get("/community/stories").set("Authorization", `Bearer ${sameCommunityReaderToken}`),
+        withMediaPlatformEnabled(() => request(app)
+          .get(`/media-assets/${derivedMediaAssetId}`)
+          .set("Authorization", `Bearer ${sameCommunityReaderToken}`)),
+      ]);
+      expect(readyOwnerStatus.status).toBe(200);
+      expect(readyOwnerStatus.body.composition).toMatchObject({
+        status: "ready",
+        source_count: 2,
+        source_media_asset_ids: orderedSourceIds,
+      });
+      expect(finalAuthorFeed.body.stories.some(
+        (story: { id: number; status: string }) => story.id === momentCompositionStoryId && story.status === "pending",
+      )).toBe(true);
+      expect(finalReaderFeed.body.stories.some(
+        (story: { id: number }) => story.id === momentCompositionStoryId,
+      )).toBe(false);
+      expect(hiddenMedia.status).toBe(404);
+    } finally {
+      restoreQueue();
+    }
   });
 });
