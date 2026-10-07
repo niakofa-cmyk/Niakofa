@@ -5,23 +5,153 @@ import {
   BadgeCheck,
   BookOpen,
   Check,
+  Clapperboard,
   ChevronDown,
   ChevronRight,
   Clock3,
   Eye,
+  Globe2,
   HeartHandshake,
   LockKeyhole,
+  MessageCircle,
   MapPin,
   MoreHorizontal,
+  Radio,
+  ShoppingBag,
   ShieldCheck,
   Star,
   Trash2,
   Users,
   WalletCards,
+  type LucideIcon,
 } from "lucide-react";
 
-type ProfileTab = "overview" | "history" | "settings";
+type ProfileTab = "overview" | "spaces" | "history" | "settings";
 type MomentView = "published" | "archive" | "featured";
+type SpaceKey = "family" | "moments" | "spirals" | "hubs" | "exchange" | "messages";
+type ControlKey = "family" | "moments" | "exchange" | "spirals" | "hubs";
+
+const profileSpaces: Array<{
+  key: SpaceKey;
+  title: string;
+  kind: string;
+  audience: string;
+  description: string;
+  icon: LucideIcon;
+  accent: string;
+}> = [
+  {
+    key: "family",
+    title: "Family Stories & Vault",
+    kind: "Private archive",
+    audience: "Only you or your Family Space",
+    description: "Keep written stories, photographs, recordings, and memories with your family.",
+    icon: BookOpen,
+    accent: "text-[#f1c89f] bg-[#f1c89f]/[.11]",
+  },
+  {
+    key: "moments",
+    title: "Sparks · Moments",
+    kind: "Community feed",
+    audience: "Your Community or a chosen Hub",
+    description: "Short shared updates live in Moments; each Spark keeps its chosen audience.",
+    icon: Clapperboard,
+    accent: "text-[#75dcef] bg-[#00cfff]/[.11]",
+  },
+  {
+    key: "spirals",
+    title: "Spirals",
+    kind: "Live conversations",
+    audience: "Curated city or neighborhood",
+    description: "Join or host a live audio conversation, with video available in some rooms.",
+    icon: Radio,
+    accent: "text-[#a6e2c3] bg-[#a6e2c3]/[.11]",
+  },
+  {
+    key: "hubs",
+    title: "Diaspora Hubs",
+    kind: "Shared communities",
+    audience: "Hub-specific scope",
+    description: "Find cultural and regional communities, published stories, and local connections.",
+    icon: Globe2,
+    accent: "text-[#eab0b3] bg-[#eab0b3]/[.11]",
+  },
+  {
+    key: "exchange",
+    title: "Niakofa Exchange",
+    kind: "Neighbor-to-neighbor",
+    audience: "A coarse local area",
+    description: "Offer a free item or skill, ask for help, and coordinate a safe handoff.",
+    icon: ShoppingBag,
+    accent: "text-[#f0cf7a] bg-[#f0cf7a]/[.11]",
+  },
+  {
+    key: "messages",
+    title: "Messages & alerts",
+    kind: "Direct communication",
+    audience: "People in the conversation",
+    description: "Continue a private exchange handoff, reply to a neighbor, or review notifications.",
+    icon: MessageCircle,
+    accent: "text-[#a7dce4] bg-[#a7dce4]/[.11]",
+  },
+];
+
+const controlOrder: ControlKey[] = ["family", "moments", "exchange", "spirals", "hubs"];
+const mediaGuides: Record<ControlKey, {
+  title: string;
+  status: string;
+  summary: string;
+  points: string[];
+}> = {
+  family: {
+    title: "Family stories & memories",
+    status: "Edit and delete, by permission",
+    summary: "Family content stays in its own archive; it is not a Community Moment.",
+    points: [
+      "A Story’s edit and delete controls appear only when the Family Space grants you manage access.",
+      "The author of a Memory can edit its title and story text, add media, or delete the whole Memory.",
+      "A Story can link to a Vault recording or photo; removing that link does not remove the original Memory.",
+    ],
+  },
+  moments: {
+    title: "Sparks · Community Moments",
+    status: "Archive, feature, or remove",
+    summary: "The current creator surface does not offer editing for a published Moment.",
+    points: [
+      "You can archive a published Moment, feature or unfeature it, and toggle whether video responses are allowed.",
+      "Permanent deletion is offered from the private archive, after the Moment has been archived.",
+      "A private archive is opt-in; it is separate from Family Stories and account history.",
+    ],
+  },
+  exchange: {
+    title: "Exchange posts & video Sparks",
+    status: "Edit or withdraw before handoff",
+    summary: "Exchange posts are offers and needs, not a shared social-media feed.",
+    points: [
+      "An active post can be edited before pickup coordination is accepted; it can be withdrawn while still active.",
+      "An archived post can be renewed. A permanent delete action is not surfaced in the reviewed Exchange UI.",
+      "Exchange video Sparks are attached to a listing; captions are editable while the Spark is a draft.",
+    ],
+  },
+  spirals: {
+    title: "Spirals",
+    status: "Live room controls",
+    summary: "A Spiral is a live conversation, not a persistent profile post.",
+    points: [
+      "Hosts set the session title, topic, format, speaker limit, and whether recording is allowed when they start a room.",
+      "Recordings live in the Spiral room’s recording area; no profile-level media edit or delete control is surfaced.",
+    ],
+  },
+  hubs: {
+    title: "Diaspora Hubs & stories",
+    status: "Hub-specific publishing",
+    summary: "Hub stories have their own audience and are not part of the private Family Vault.",
+    points: [
+      "The Hub story view supports browsing, reporting, and translation review; it does not surface an owner edit or delete control.",
+      "Recording an oral history from a Hub context leads into Family, where its audience and archive are managed.",
+    ],
+  },
+};
 
 type Moment = {
   id: number;
@@ -262,14 +392,20 @@ function MomentCard({
 }
 
 export function ActivityProfile() {
-  const [tab, setTab] = useState<ProfileTab>("overview");
+  const [tab, setTab] = useState<ProfileTab>(() =>
+    new URLSearchParams(window.location.search).get("tab") === "spaces" ? "spaces" : "overview"
+  );
   const [momentView, setMomentView] = useState<MomentView>("published");
+  const [selectedSpace, setSelectedSpace] = useState<SpaceKey>("family");
+  const [controlView, setControlView] = useState<ControlKey>("moments");
   const [moments, setMoments] = useState(initialMoments);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [toast, setToast] = useState("");
   const [showSettingsNote, setShowSettingsNote] = useState(true);
   const [darkModeOn, setDarkModeOn] = useState(true);
+  const activeSpace = profileSpaces.find((space) => space.key === selectedSpace)!;
+  const activeGuide = mediaGuides[controlView];
 
   const visibleMoments = useMemo(() => {
     if (momentView === "archive") return moments.filter((moment) => moment.archived);
@@ -301,6 +437,7 @@ export function ActivityProfile() {
 
   const tabs: Array<{ key: ProfileTab; label: string }> = [
     { key: "overview", label: "Overview" },
+    { key: "spaces", label: "Spaces" },
     { key: "history", label: "History" },
     { key: "settings", label: "Settings" },
   ];
@@ -330,7 +467,7 @@ export function ActivityProfile() {
         </header>
 
         <div className="mx-auto max-w-[520px] px-3 pb-8 pt-4 sm:px-5">
-          <nav aria-label="Profile sections" className="mb-4 grid grid-cols-3 rounded-2xl border border-white/[.08] bg-[#0b1f34] p-1">
+          <nav aria-label="Profile sections" className="mb-4 grid grid-cols-4 rounded-2xl border border-white/[.08] bg-[#0b1f34] p-1">
             {tabs.map((item) => (
               <button
                 key={item.key}
@@ -402,6 +539,20 @@ export function ActivityProfile() {
                   </div>
                 </div>
               </section>
+
+              <button
+                type="button"
+                onClick={() => setTab("spaces")}
+                className="group flex w-full items-center gap-3 rounded-[1.35rem] border border-[#f0cf7a]/20 bg-[linear-gradient(110deg,rgba(240,207,122,.08),rgba(15,36,59,.9)_55%)] p-4 text-left transition hover:border-[#f0cf7a]/40 focus:outline-none focus:ring-2 focus:ring-[#f0cf7a]/50"
+              >
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#f0cf7a]/[.12] text-[#f0cf7a]"><Globe2 className="h-4 w-4" /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[9px] font-extrabold uppercase tracking-[.15em] text-[#c8b981]">Help today. Pay it forward tomorrow.</span>
+                  <span className="mt-1 block text-sm font-bold text-[#edf2ed]">One profile, six ways to connect</span>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-[#98adbd]">Family, Community, Spirals, Hubs, Exchange, and direct messages—kept in their own spaces.</span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-[#a5a98f] transition-transform group-hover:translate-x-0.5" />
+              </button>
 
               <section aria-labelledby="moments-heading" className="pt-1">
                 <div className="mb-3 flex items-end justify-between gap-3 px-1">
@@ -491,6 +642,135 @@ export function ActivityProfile() {
                 <ChevronRight className="h-4 w-4 text-[#8199ac]" />
               </button>
             </div>
+          )}
+
+          {tab === "spaces" && (
+            <section className="profile-reveal space-y-4" aria-labelledby="spaces-heading">
+              <header className="relative overflow-hidden rounded-[1.65rem] border border-white/[.09] bg-[#10283d] p-5">
+                <div className="absolute -right-7 -top-10 h-40 w-40 rounded-full border border-[#75dcef]/15" />
+                <div className="relative">
+                  <SectionLabel>Family · Community · Legacy</SectionLabel>
+                  <h1 id="spaces-heading" className="font-['Fraunces'] text-[30px] font-semibold tracking-[-.04em] text-[#f7f5ec]">Your spaces</h1>
+                  <p className="mt-2 max-w-[340px] text-xs leading-relaxed text-[#a4b7c5]">Niakofa’s mission is “Help Today, Pay It Forward Tomorrow.” This profile can be the front door to its different ways of showing up—without blending their audiences together.</p>
+                </div>
+              </header>
+
+              <section aria-labelledby="connection-map-heading" className="rounded-[1.4rem] border border-white/[.08] bg-[#0c2137] p-4">
+                <div className="mb-3 flex items-end justify-between gap-3 px-1">
+                  <div>
+                    <SectionLabel>Choose a space</SectionLabel>
+                    <h2 id="connection-map-heading" className="font-['Fraunces'] text-[23px] font-semibold tracking-[-.03em] text-[#f8f7ed]">Connection map</h2>
+                  </div>
+                  <span className="mb-1 text-[9px] font-bold uppercase tracking-[.12em] text-[#7f98ab]">6 spaces</span>
+                </div>
+
+                <ul className="space-y-2" aria-label="Niakofa spaces">
+                  {profileSpaces.map((space) => {
+                    const Icon = space.icon;
+                    const selected = selectedSpace === space.key;
+                    return (
+                      <li key={space.key}>
+                        <button
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setSelectedSpace(space.key)}
+                          className={`group flex min-h-[76px] w-full items-center gap-3 rounded-[1.1rem] border p-3 text-left transition focus:outline-none focus:ring-2 focus:ring-[#75dcef]/50 ${
+                            selected ? "border-[#75dcef]/35 bg-[#102d47]" : "border-white/[.075] bg-[#0e253d] hover:border-white/[.15] hover:bg-[#112b44]"
+                          }`}
+                          data-testid={`profile-space-${space.key}`}
+                        >
+                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${space.accent}`}><Icon className="h-[18px] w-[18px]" /></span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="text-[13px] font-extrabold text-[#edf2ed]">{space.title}</span>
+                              <span className="text-[9px] font-bold uppercase tracking-[.12em] text-[#7893a9]">{space.kind}</span>
+                            </span>
+                            <span className="mt-1 block text-[10px] leading-relaxed text-[#95aabd]">{space.description}</span>
+                            <span className="mt-1.5 flex items-center gap-1 text-[9px] font-bold text-[#d1c58f]"><LockKeyhole className="h-3 w-3" /> {space.audience}</span>
+                          </span>
+                          <ChevronRight className={`h-4 w-4 shrink-0 transition-transform ${selected ? "translate-x-0.5 text-[#75dcef]" : "text-[#70899d] group-hover:translate-x-0.5"}`} />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {(() => {
+                  const ActiveSpaceIcon = activeSpace.icon;
+                  return (
+                    <div className="mt-3 rounded-[1.15rem] border border-[#00cfff]/15 bg-[linear-gradient(115deg,rgba(0,207,255,.07),rgba(8,24,43,.35))] p-4" aria-live="polite">
+                      <div className="flex items-start gap-3">
+                        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${activeSpace.accent}`}><ActiveSpaceIcon className="h-[18px] w-[18px]" /></span>
+                        <div className="min-w-0">
+                          <p className="text-[9px] font-extrabold uppercase tracking-[.16em] text-[#75dcef]">Selected space · {activeSpace.kind}</p>
+                          <h3 className="mt-1 text-sm font-extrabold text-[#f3f5ed]">{activeSpace.title}</h3>
+                          <p className="mt-1 text-[11px] leading-relaxed text-[#a2b7c6]">{activeSpace.description}</p>
+                          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/[.09] bg-[#08182b]/55 px-2.5 py-1.5 text-[9px] font-bold text-[#d1c58f]"><LockKeyhole className="h-3 w-3" /> Audience: {activeSpace.audience}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </section>
+
+              <section aria-labelledby="creation-controls-heading" className="rounded-[1.4rem] border border-[#f0cf7a]/15 bg-[#0d2237] p-4">
+                <div className="px-1">
+                  <SectionLabel>Ownership &amp; media controls</SectionLabel>
+                  <h2 id="creation-controls-heading" className="font-['Fraunces'] text-[23px] font-semibold tracking-[-.03em] text-[#f8f7ed]">Can I edit or delete my creations?</h2>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#96adbd]">Often yes—but the control belongs to the place where the content was made, and access can depend on your role.</p>
+                </div>
+
+                <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Creation control guides">
+                  {controlOrder.map((key) => {
+                    const label = key === "family" ? "Family" : key === "moments" ? "Moments" : key === "exchange" ? "Exchange" : key === "spirals" ? "Spirals" : "Hubs";
+                    const selected = controlView === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        id={`control-tab-${key}`}
+                        role="tab"
+                        aria-selected={selected}
+                        aria-controls="creation-controls-panel"
+                        onClick={() => setControlView(key)}
+                        className={`min-h-9 shrink-0 rounded-full border px-3 text-[10px] font-extrabold transition focus:outline-none focus:ring-2 focus:ring-[#f0cf7a]/50 ${
+                          selected ? "border-[#f0cf7a]/50 bg-[#f0cf7a] text-[#172533]" : "border-white/[.1] bg-[#102941] text-[#a9bbca] hover:border-white/20 hover:text-white"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div id="creation-controls-panel" className="mt-3 rounded-[1.15rem] border border-white/[.08] bg-[#102941] p-4" role="tabpanel" aria-labelledby={`control-tab-${controlView}`} aria-live="polite">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-extrabold text-[#edf2ed]">{activeGuide.title}</h3>
+                      <p className="mt-1 text-[11px] leading-relaxed text-[#9eb3c2]">{activeGuide.summary}</p>
+                    </div>
+                    <span className="rounded-full border border-[#f0cf7a]/20 bg-[#f0cf7a]/[.08] px-2.5 py-1 text-[9px] font-bold text-[#e9d38e]">{activeGuide.status}</span>
+                  </div>
+                  <ul className="mt-4 space-y-2.5">
+                    {activeGuide.points.map((point) => (
+                      <li key={point} className="flex items-start gap-2.5 text-[11px] leading-relaxed text-[#bdc9cf]">
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#75dcef]" />
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="mt-3 flex gap-2 rounded-xl border border-white/[.07] bg-[#08182b]/55 p-3">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#75dcef]" />
+                  <p className="text-[10px] leading-relaxed text-[#8fa6b7]">The profile is a front door, not a cross-app media editor. Keep family stories private, choose the audience for each Spark, and manage an item in its original space.</p>
+                </div>
+              </section>
+
+              <button type="button" onClick={() => setTab("overview")} className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-xs font-bold text-[#8ee6f4] hover:bg-white/[.05]">
+                <ChevronRight className="h-4 w-4 rotate-180" /> Back to your Community profile
+              </button>
+            </section>
           )}
 
           {tab === "history" && (
