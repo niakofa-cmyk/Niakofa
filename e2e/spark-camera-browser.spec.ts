@@ -25,6 +25,42 @@ async function applyApiSecurityHeaders(page: Page) {
   });
 }
 
+async function observeMediaRequests(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const browserWindow = window as Window & { __sparkMediaConstraints?: MediaStreamConstraints[] };
+    browserWindow.__sparkMediaConstraints = [];
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.getUserMedia) return;
+
+    const originalGetUserMedia = mediaDevices.getUserMedia.bind(mediaDevices);
+    Object.defineProperty(mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: (constraints: MediaStreamConstraints) => {
+        browserWindow.__sparkMediaConstraints?.push(constraints);
+        return originalGetUserMedia(constraints);
+      },
+    });
+  });
+}
+
+async function mediaRequests(page: Page): Promise<MediaStreamConstraints[]> {
+  return page.evaluate(() => (
+    (window as Window & { __sparkMediaConstraints?: MediaStreamConstraints[] }).__sparkMediaConstraints ?? []
+  ));
+}
+
+async function confirmCameraChoice(page: Page): Promise<void> {
+  await expect(page.getByTestId("status-spark-camera-off")).toBeVisible();
+  expect(await mediaRequests(page), "mounting the composer must not request camera or microphone").toHaveLength(0);
+
+  await page.getByTestId("button-setup-spark-camera").click();
+  await expect(page.getByTestId("button-confirm-spark-camera")).toBeVisible();
+  expect(await mediaRequests(page), "opening the consent sheet must not request camera or microphone").toHaveLength(0);
+
+  await page.getByTestId("button-confirm-spark-camera").click();
+  await expect.poll(async () => (await mediaRequests(page)).length).toBeGreaterThan(0);
+}
+
 test.describe("Spark camera browser capture", () => {
   test.skip(
     !isLocal || process.env.SPARK_CAMERA_BROWSER_E2E !== "1" || process.env.PLAYWRIGHT_FAKE_MEDIA !== "1",
@@ -32,6 +68,7 @@ test.describe("Spark camera browser capture", () => {
   );
 
   test("records a playable video and hands a non-empty browser file to the Spark composer", async ({ page }) => {
+    await observeMediaRequests(page);
     await applyApiSecurityHeaders(page);
     await page.addInitScript(() => {
       const originalPlay = HTMLMediaElement.prototype.play;
@@ -47,6 +84,11 @@ test.describe("Spark camera browser capture", () => {
     });
     await page.goto(new URL("/e2e-test/spark-camera.html", baseUrl).toString());
     await expect(page.getByTestId("dialog-spark-camera")).toBeVisible();
+    await confirmCameraChoice(page);
+    expect(
+      (await mediaRequests(page)).some((constraints) => constraints.audio === true),
+      "video setup requests microphone access only after explicit confirmation",
+    ).toBe(true);
     const record = page.getByTestId("button-record-spark-video");
     await expect(record).toBeVisible({ timeout: 15_000 });
     await record.click();
@@ -77,10 +119,12 @@ test.describe("Spark camera browser capture", () => {
   });
 
   test("captures a camera photo and hands a non-empty image to the Spark composer", async ({ page }) => {
+    await observeMediaRequests(page);
     await applyApiSecurityHeaders(page);
     await page.goto(new URL("/e2e-test/spark-camera.html", baseUrl).toString());
     await expect(page.getByTestId("dialog-spark-camera")).toBeVisible();
     await page.getByRole("button", { name: "Photo", exact: true }).click();
+    await confirmCameraChoice(page);
     await expect(page.getByTestId("button-capture-spark-photo")).toBeVisible({ timeout: 15_000 });
     await page.getByTestId("button-capture-spark-photo").click();
     const preview = page.locator('img[alt="Captured Spark photo preview"]');
@@ -90,5 +134,22 @@ test.describe("Spark camera browser capture", () => {
     }).toBe(true);
     await page.getByTestId("button-use-spark-camera").click();
     await expect(page.getByTestId("result-spark-camera")).toContainText(/image\/(?:jpeg|png):[1-9]\d*/);
+  });
+
+  test("closing consent or choosing device media never requests camera access", async ({ page }) => {
+    await observeMediaRequests(page);
+    await applyApiSecurityHeaders(page);
+    await page.goto(new URL("/e2e-test/spark-camera.html", baseUrl).toString());
+    await expect(page.getByTestId("status-spark-camera-off")).toBeVisible();
+
+    await page.getByTestId("button-setup-spark-camera").click();
+    await page.getByRole("button", { name: "Close camera setup" }).click();
+    await expect(page.getByTestId("button-confirm-spark-camera")).toHaveCount(0);
+    expect(await mediaRequests(page)).toHaveLength(0);
+
+    await page.getByTestId("button-setup-spark-camera").click();
+    await page.getByTestId("button-choose-media-instead").click();
+    await expect(page.getByTestId("result-spark-camera")).toHaveText("gallery");
+    expect(await mediaRequests(page)).toHaveLength(0);
   });
 });

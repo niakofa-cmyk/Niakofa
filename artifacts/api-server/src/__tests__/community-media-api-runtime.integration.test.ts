@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import express from "express";
@@ -108,6 +108,8 @@ suite("isolated cross-community content and media access matrix", () => {
   let authorToken = "";
   let sameCommunityReaderToken = "";
   let readerToken = "";
+  let pendingMomentCaption = "";
+  let pendingMomentSourceIds: number[] = [];
   const originalMediaPlatformFlag = process.env.MEDIA_PLATFORM_V21;
 
   async function withMediaPlatformEnabled<T>(work: () => Promise<T>): Promise<T> {
@@ -1130,10 +1132,11 @@ suite("isolated cross-community content and media access matrix", () => {
   });
 
   it("keeps a review-pending Moment private and resumes its same ordered stitch after failure", async () => {
+    pendingMomentCaption = `Pending stitch fixture ${randomUUID()}`;
     const createdStory = await request(app)
       .post("/community/stories")
       .set("Authorization", `Bearer ${authorToken}`)
-      .send({ caption: `Pending stitch fixture ${randomUUID()}`, audience: "community" });
+      .send({ caption: pendingMomentCaption, audience: "community" });
     expect(createdStory.status).toBe(201);
     momentCompositionStoryId = createdStory.body.story.id as number;
     expect(Number.isSafeInteger(momentCompositionStoryId)).toBe(true);
@@ -1169,6 +1172,7 @@ suite("isolated cross-community content and media access matrix", () => {
     if (orderedSourceIds.some((id) => id === undefined)) {
       throw new Error("The pending stitch fixture did not create two ordered source videos.");
     }
+    pendingMomentSourceIds = [...orderedSourceIds];
 
     const [authorFeed, sameCommunityFeed, crossCommunityFeed] = await Promise.all([
       request(app).get("/community/stories").set("Authorization", `Bearer ${authorToken}`),
@@ -1350,6 +1354,148 @@ suite("isolated cross-community content and media access matrix", () => {
       expect(hiddenMedia.status).toBe(404);
     } finally {
       restoreQueue();
+    }
+  });
+
+  it("runs opt-in browser acceptance with the same disposable A/B/C accounts", async () => {
+    if (process.env.COMMUNITY_MEDIA_BROWSER_ACCEPTANCE !== "1") return;
+    if (!authorId || !sameCommunityReaderId || !readerId || !momentCompositionStoryId) {
+      throw new Error("The matrix browser check requires the A/B/C and pending stitch fixtures.");
+    }
+    expect(pendingMomentCaption).toMatch(/^Pending stitch fixture /);
+
+    const baseUrl = process.env.COMMUNITY_MEDIA_BROWSER_BASE_URL?.trim()
+      || "http://127.0.0.1:18848";
+    const parsedBaseUrl = new URL(baseUrl);
+    expect(parsedBaseUrl.protocol).toBe("http:");
+    expect(["127.0.0.1", "localhost", "::1"]).toContain(parsedBaseUrl.hostname);
+
+    const stateDirectory = await mkdtemp(path.join(tmpdir(), "niakofa-matrix-browser-"));
+    let browserServer: ReturnType<typeof app.listen> | undefined;
+    try {
+      const { rows: users } = await pool.query<{
+        id: number;
+        name: string;
+        email: string;
+        approval_status: string;
+        community_id: number | null;
+      }>(
+        `SELECT id, name, email, approval_status, community_id
+         FROM users WHERE id = ANY($1::integer[])`,
+        [[authorId, sameCommunityReaderId, readerId]],
+      );
+      const usersById = new Map(users.map((user) => [user.id, user]));
+      const writeState = async (label: string, id: number, token: string) => {
+        const fixtureUser = usersById.get(id);
+        if (!fixtureUser || fixtureUser.approval_status !== "approved") {
+          throw new Error(`Matrix Account ${label} is not an approved fixture.`);
+        }
+        const user = {
+          ...fixtureUser,
+          is_helper: false,
+          helper_status: null,
+          helper_mode_active: false,
+          is_suspended: false,
+          trust_score: 0,
+          help_count: 0,
+        };
+        const state = {
+          cookies: [],
+          origins: [{
+            origin: parsedBaseUrl.origin,
+            localStorage: [
+              { name: "niakofa_token", value: token },
+              { name: "niakofa_user", value: JSON.stringify(user) },
+            ],
+          }],
+        };
+        await writeFile(
+          path.join(stateDirectory, `account-${label.toLowerCase()}.json`),
+          JSON.stringify(state),
+          { encoding: "utf8", mode: 0o600 },
+        );
+      };
+
+      await Promise.all([
+        writeState("A", authorId, authorToken),
+        writeState("B", sameCommunityReaderId, sameCommunityReaderToken),
+        writeState("C", readerId, readerToken),
+      ]);
+
+      browserServer = app.listen(0, "127.0.0.1");
+      await new Promise<void>((resolve, reject) => {
+        browserServer!.once("listening", resolve);
+        browserServer!.once("error", reject);
+      });
+      const address = browserServer.address();
+      if (!address || typeof address === "string") {
+        throw new Error("The local matrix API fixture server did not bind a TCP port.");
+      }
+
+      const workspaceRoot = path.resolve(process.cwd(), "../..");
+      const playwrightCli = path.join(workspaceRoot, "node_modules/.bin/playwright");
+      if (!existsSync(playwrightCli)) {
+        throw new Error("The repository Playwright CLI is unavailable for matrix browser acceptance.");
+      }
+      const browserEnv: NodeJS.ProcessEnv = {
+        PATH: process.env.PATH ?? "/usr/bin:/bin",
+        HOME: process.env.HOME ?? tmpdir(),
+        CI: "1",
+        NODE_ENV: "test",
+        PLAYWRIGHT_BASE_URL: baseUrl,
+        PLAYWRIGHT_EXECUTABLE_PATH: process.env.PLAYWRIGHT_EXECUTABLE_PATH || "/repl/tools/bin/chromium",
+        PLAYWRIGHT_FAKE_MEDIA: "1",
+        SPARK_CAMERA_BROWSER_E2E: "1",
+        MATRIX_TEST_API_URL: `http://127.0.0.1:${address.port}`,
+        MATRIX_USER_A_STATE: path.join(stateDirectory, "account-a.json"),
+        MATRIX_USER_B_STATE: path.join(stateDirectory, "account-b.json"),
+        MATRIX_USER_C_STATE: path.join(stateDirectory, "account-c.json"),
+        MATRIX_PENDING_STORY_ID: String(momentCompositionStoryId),
+        MATRIX_PENDING_STORY_CAPTION: pendingMomentCaption,
+        MATRIX_PENDING_SOURCE_IDS: JSON.stringify(pendingMomentSourceIds),
+      };
+
+      await withMediaPlatformEnabled(async () => {
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(
+            playwrightCli,
+            ["test", "e2e/matrix-profile-spark-browser.spec.ts", "--workers=1", "--reporter=line"],
+            { cwd: workspaceRoot, env: browserEnv, stdio: ["ignore", "pipe", "pipe"] },
+          );
+          let stdout = "";
+          let stderr = "";
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGKILL");
+          }, 240_000);
+          child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+          child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+          child.once("error", (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          });
+          child.once("close", (code) => {
+            clearTimeout(timeout);
+            if (stdout) process.stdout.write(stdout);
+            if (stderr) process.stderr.write(stderr);
+            if (timedOut) {
+              reject(new Error("Matrix browser acceptance exceeded its four-minute timeout."));
+            } else if (code !== 0) {
+              reject(new Error(`Matrix browser acceptance exited with code ${String(code)}.`));
+            } else {
+              resolve();
+            }
+          });
+        });
+      });
+    } finally {
+      if (browserServer?.listening) {
+        await new Promise<void>((resolve, reject) => {
+          browserServer!.close((error) => error ? reject(error) : resolve());
+        });
+      }
+      await rm(stateDirectory, { recursive: true, force: true });
     }
   });
 });
