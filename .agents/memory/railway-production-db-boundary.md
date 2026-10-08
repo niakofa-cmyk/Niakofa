@@ -33,6 +33,19 @@ When Niakofa is backed by separate Railway PostgreSQL services, `DATABASE_URL` m
 
 **How to apply:** Confirm the intended Railway database target before mutation, run migrations fail-closed, verify the extension and schema afterward, and keep Haversine fallback only for environments that intentionally lack PostGIS.
 
+As of 2026-10-08, the operator confirmed in Railway's Variables view that the
+production `zesty-ambition` service references **PostGIS** for `DATABASE_URL`.
+This resolves the configured target, but not the live schema or runtime query
+behavior; no production SQL was run for that confirmation.
+
+**Why:** Both Railway database services expose similarly named PostgreSQL
+variables, while the connected Railway metadata omits the reference expression.
+Service status and variable names alone cannot distinguish the target.
+
+**How to apply:** Treat the operator-confirmed reference as wiring evidence only.
+Use an approved read-only SQL session for extension, geography-column, trigger,
+and index verification before claiming production schema readiness.
+
 ## Credential validation
 
 Secret presence or secure-form confirmation does not prove that a Replit process can authenticate with the saved connection value. An operator's successful interactive login also does not validate a URI's password encoding or the value saved in Replit.

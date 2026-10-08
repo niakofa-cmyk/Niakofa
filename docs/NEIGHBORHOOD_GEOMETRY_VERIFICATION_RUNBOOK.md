@@ -41,6 +41,21 @@ Exit codes:
 - `2`: at least one invalid geometry was found;
 - `1`: the verification command itself failed.
 
+## Railway production gate
+
+The operator confirmed that Railway's production `zesty-ambition` service
+references the dedicated **PostGIS** service for `DATABASE_URL`
+([current status](RAILWAY_POSTGIS_PRODUCTION_STATUS.md)). This verifies the
+configured target only; it does not prove the extension, migrations, columns, or
+indexes are present in that database.
+
+Before treating a production geometry report as evidence, run the read-only
+checks in
+[`runbooks/production-postgis-diagnostic.sql`](runbooks/production-postgis-diagnostic.sql)
+from an approved session connected to that PostGIS service. Never paste or
+record the connection string. Service health and variable names are not
+substitutes for a database query.
+
 ## Promotion rule
 
 Only promote a feature after an administrator has reviewed the source, confirmed that the polygon represents the intended neighborhood, and marked it `geometry_verified`. The PostGIS report is a technical gate, not a substitute for geographic review.
