@@ -57,3 +57,16 @@ private financial event is needed to establish exact provenance.
 the corresponding private financial event or adjustment note before claiming
 that a particular ledger row belongs to that payment. Do not label a matching
 amount as tax or perform a repair based on amount equality alone.
+
+The adjustment row's `user_id` identifies the PaymentIntent contributor, not
+the operator who wrote the row. The Stripe webhook and admin repair endpoint
+share the same settlement writer; the webhook log omits the PaymentIntent ID,
+the repair log does not identify the admin actor, and the settlement writer
+does not create an actor audit event.
+
+**Why:** Amount matching and contributor identity do not establish who initiated
+the accounting write or whether it came from the webhook or an admin repair.
+
+**How to apply:** Attribute a pool adjustment only after correlating its exact
+PaymentIntent and settlement rows with an actor-bearing audit record. Otherwise
+report the recording path or person as indeterminate.
