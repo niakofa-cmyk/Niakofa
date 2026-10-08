@@ -109,6 +109,11 @@ VITE_STRIPE_PUBLISHABLE_KEY = "pk_live_51Ti2TuDJiXJaxeqOmFmGhs1yhKiXGjB8gLo6yZzg
 VITE_VAPID_PUBLIC_KEY = "BG_m3VJrA47L8jYC6rVJM0HJElAlVZYf8O6wzZ7DxSeiZyo1pWd5D2xmTIqpjd1_LqCmq0I3Xl1q6a5jB5PZHzc"
 APP_URL = "https://344ee55e-2b07-4834-a035-cf6e3d86f117-00-10iu0k7uswe2t.kirk.replit.dev"
 
+[userenv.development]
+USER_ADMIN_STATE = ".auth/niakofa-admin.json"
+USER_A_STATE = ".auth/niakofa-admin.json"
+USER_B_STATE = ".auth/niakofa-admin.json"
+
 [nix]
 channel = "stable-25_05"
 packages = ["freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "mupdf", "openjpeg", "swig", "xcbuild"]
