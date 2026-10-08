@@ -9,8 +9,6 @@ The user identifies the production acceptance Account A as an approved admin.
 This is distinct from Account A in the cross-community media matrix, which is a
 synthetic local test user with the default non-admin role.
 
-**Why:** The repository config and workspace runner have specific deployed-browser wiring, and browser storage state contains reusable authentication credentials. A local ignored file lets an authorized operator run the admin check without transferring the session.
+**Why:** Browser storage state contains reusable credentials, large inline values can be transformed, and the same Account A label is used for a production admin and a synthetic local fixture.
 
-**Why:** The same Account A label is used for a production acceptance identity and a local synthetic matrix fixture; substituting the local token would not authenticate the production admin.
-
-**How to apply:** Use only the production account's genuine local session for live admin reads; never substitute the synthetic matrix state. Use the repository Playwright CLI and system Chromium. For the admin county-readiness acceptance, capture a currently signed-in admin session locally into `.auth/niakofa-admin.json`, set `ADMIN_E2E_BASE_URL=https://niakofa.com`, and run the dedicated read-only spec. For other deployed checks, use their documented `USER_A_STATE` inputs. Keep the auth file local and ignored.
+**How to apply:** Use only the production account's genuine local session for live admin reads; never substitute the synthetic matrix state. Use the repository Playwright CLI and system Chromium. For admin readiness, validate `.auth/niakofa-admin.json` before the read-only spec makes a request. In deployed runners, prefer `USER_A_STATE` / `USER_B_STATE` file paths (including ignored `.auth/` files); use `*_STATE_JSON` only when the matching path is unset. An invalid explicit path fails closed. Keep auth files local and ignored.

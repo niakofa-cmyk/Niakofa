@@ -1,24 +1,33 @@
 import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
 const baseURL = process.env.ADMIN_E2E_BASE_URL;
 const storageStatePath = resolve(process.cwd(), ".auth/niakofa-admin.json");
 const hasAdminState = existsSync(storageStatePath);
+const validatorPath = resolve(process.cwd(), "ops/validate-user-a-state.mjs");
+const stateValidation = hasAdminState
+  ? spawnSync(process.execPath, [validatorPath, storageStatePath, "USER_A_STATE", "https://niakofa.com"], { stdio: "ignore" })
+  : undefined;
+const hasValidAdminState = hasAdminState && stateValidation?.status === 0;
 
 if (baseURL && new URL(baseURL).origin !== "https://niakofa.com") {
   throw new Error("This production acceptance test only permits https://niakofa.com.");
 }
+if (baseURL && hasAdminState && !hasValidAdminState) {
+  throw new Error("Local admin storage state failed validation; no production request was made.");
+}
 
 test.describe("Tarrant county pool readiness — read-only production acceptance", () => {
   test.skip(
-    !baseURL || !hasAdminState,
-    "Set ADMIN_E2E_BASE_URL=https://niakofa.com and capture .auth/niakofa-admin.json locally.",
+    !baseURL || !hasValidAdminState,
+    "Set ADMIN_E2E_BASE_URL=https://niakofa.com and place a valid, private .auth/niakofa-admin.json locally.",
   );
 
   test.use({
     baseURL,
-    storageState: hasAdminState ? storageStatePath : undefined,
+    storageState: hasValidAdminState ? storageStatePath : undefined,
   });
 
   test("renders the authenticated readiness row from the live admin API without writes", async ({ page }) => {

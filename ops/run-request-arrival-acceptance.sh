@@ -28,8 +28,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+materialized_state_path=""
 materialize_state_json() {
   local env_name="$1"
+  local file_name="$2"
   local json_value="${!env_name:-}"
   if [[ -z "$json_value" ]]; then
     return 0
@@ -37,25 +39,19 @@ materialize_state_json() {
 
   runtime_dir="${runtime_dir:-$(mktemp -d "${TMPDIR:-/tmp}/niakofa-arrival.XXXXXX")}"
   chmod 700 "$runtime_dir"
-  local path="$runtime_dir/${env_name,,}.json"
-  printf '%s' "$json_value" | node ops/materialize-storage-state.mjs "$path"
+  materialized_state_path="$runtime_dir/$file_name"
+  printf '%s' "$json_value" | node ops/materialize-storage-state.mjs "$materialized_state_path" >/dev/null
 }
 
-if [[ -n "${USER_A_STATE_JSON:-}" ]]; then
-  if [[ -n "${USER_A_STATE:-}" ]]; then
-    echo "Refusing acceptance: use USER_A_STATE_JSON or USER_A_STATE, not both." >&2
-    exit 2
-  fi
-  USER_A_STATE="$(materialize_state_json USER_A_STATE_JSON)"
+if [[ -z "${USER_A_STATE:-}" && -n "${USER_A_STATE_JSON:-}" ]]; then
+  materialize_state_json USER_A_STATE_JSON user-a-state.json
+  USER_A_STATE="$materialized_state_path"
   export USER_A_STATE
 fi
 
-if [[ -n "${USER_B_STATE_JSON:-}" ]]; then
-  if [[ -n "${USER_B_STATE:-}" ]]; then
-    echo "Refusing acceptance: use USER_B_STATE_JSON or USER_B_STATE, not both." >&2
-    exit 2
-  fi
-  USER_B_STATE="$(materialize_state_json USER_B_STATE_JSON)"
+if [[ -z "${USER_B_STATE:-}" && -n "${USER_B_STATE_JSON:-}" ]]; then
+  materialize_state_json USER_B_STATE_JSON user-b-state.json
+  USER_B_STATE="$materialized_state_path"
   export USER_B_STATE
 fi
 

@@ -32,17 +32,20 @@ It also requires:
 - `BASE_URL` and `NIAKOFA_API_ORIGIN` to be the same credential-free HTTP(S)
   origin.
 - A full 40-character `EXPECTED_COMMIT` matching `/api/version`.
-- `USER_A_STATE` and `USER_B_STATE`, or their corresponding `*_STATE_JSON`
-  values.
+- `USER_A_STATE` and `USER_B_STATE` private file paths, or their corresponding
+  `*_STATE_JSON` fallback values when a path is not configured.
 - Distinct approved requester/helper accounts whose storage state matches
   `BASE_URL`.
 - A ready deployment.
 
-Storage-state files must be regular, untracked files outside the checkout with
-mode `0600`. The existing `ops/validate-user-a-state.mjs` validates both files.
-JSON state supplied through environment variables is materialized in a private
-temporary directory and removed when the runner exits. Never commit or log
-storage state, bearer tokens, or account passwords.
+Storage-state files must be regular, untracked files with mode `0600`; workspace
+files are permitted only in the git-ignored `.auth/` directory. A configured
+file path takes precedence, and an invalid path fails closed instead of
+silently switching accounts. JSON supplied through environment variables is
+used only when its corresponding path is unset, materialized in a private
+temporary directory, and removed when the runner exits. The existing validator
+checks both states before any production request. Never commit or log storage
+state, bearer tokens, or account passwords.
 
 ## Run the focused acceptance
 

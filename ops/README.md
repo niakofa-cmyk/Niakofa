@@ -18,14 +18,17 @@ for the full contract and dated verification evidence. Do not rerun a passing
 production scenario only to refresh its evidence; a new run requires approved
 disposable states and explicit operator authorization.
 
-Pass a pre-existing state with `USER_A_STATE` / `USER_B_STATE` only when each is
-an untracked, non-symlink regular file outside the repository and mode `0600`.
-For User A, deployment operators may instead place the JSON state in the
-`USER_A_STATE_JSON` secret. The runner creates a `0600` file in a private
-runtime temporary directory, exports its path only to its child processes, and
-removes it on exit. Never echo, log, or commit storage-state JSON. The only
-permitted upload path is the separately gated helper for the private Railway
-bucket described below.
+Prefer a pre-existing state file through `USER_A_STATE` / `USER_B_STATE`.
+Each file must be an untracked, non-symlink regular file with mode `0600`;
+workspace-local files are allowed only under the git-ignored `.auth/`
+directory. A valid path takes precedence. If a path variable is unset,
+deployment operators may use the corresponding `USER_A_STATE_JSON` /
+`USER_B_STATE_JSON` secret as a fallback. The runner materializes fallback JSON
+as a `0600` file in a private runtime directory, passes only the path to child
+processes, and removes it on exit. An explicitly configured but invalid path
+fails closed rather than silently switching to another account. Never echo,
+log, or commit storage-state JSON. The only permitted upload path is the
+separately gated helper for the private Railway bucket described below.
 
 Generate state for an existing approved disposable test account. Prefer the
 interactive password prompt so the password is not placed in the command line,
@@ -45,6 +48,20 @@ process if the existing account needs a new password.
 
 The generator and validator deliberately avoid printing token or password
 contents. `.auth/` and generated acceptance-state directories are ignored.
+
+## Read-only production admin county-pool readiness
+
+The authenticated county-readiness check reads
+`.auth/niakofa-admin.json` directly. Keep that Playwright state local, untracked,
+and mode `0600`; the test validates it before opening the production page and
+blocks `POST`, `PUT`, `PATCH`, and `DELETE` browser requests.
+
+```sh
+ADMIN_E2E_BASE_URL=https://niakofa.com \
+  ./node_modules/.bin/playwright test e2e/admin-county-pool-readiness-live.spec.ts --reporter=line
+```
+
+This test is read-only and does not use `USER_A_STATE_JSON`.
 
 ## Railway-backed Community Moments read-only acceptance
 

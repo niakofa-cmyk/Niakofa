@@ -33,25 +33,41 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Secret JSON is never logged or persisted in the checkout. Materialize it only
-# for this process tree in a private runtime directory.
-if [[ -n "${USER_A_STATE_JSON:-}" ]]; then
-  if [[ -n "${USER_A_STATE:-}" ]]; then
-    echo "Refusing live acceptance: use either USER_A_STATE_JSON or USER_A_STATE, not both." >&2
-    exit 2
-  fi
-  runtime_dir="$(mktemp -d "${TMPDIR:-/tmp}/niakofa-acceptance.XXXXXX")"
+# Prefer an operator-provided private state file. Inline JSON is only a fallback
+# when no path is configured; an invalid configured path fails closed.
+materialized_state_path=""
+materialize_state_json() {
+  local env_name="$1"
+  local file_name="$2"
+  local json_value="${!env_name:-}"
+  runtime_dir="${runtime_dir:-$(mktemp -d "${TMPDIR:-/tmp}/niakofa-acceptance.XXXXXX")}"
   chmod 700 "$runtime_dir"
-  USER_A_STATE="$runtime_dir/user-a-state.json"
-  printf '%s' "$USER_A_STATE_JSON" | node ops/materialize-storage-state.mjs "$USER_A_STATE" >/dev/null
+  materialized_state_path="$runtime_dir/$file_name"
+  printf '%s' "$json_value" | node ops/materialize-storage-state.mjs "$materialized_state_path" >/dev/null
+}
+
+if [[ -z "${USER_A_STATE:-}" && -n "${USER_A_STATE_JSON:-}" ]]; then
+  materialize_state_json USER_A_STATE_JSON user-a-state.json
+  USER_A_STATE="$materialized_state_path"
   export USER_A_STATE
 fi
+if [[ -z "${USER_B_STATE:-}" && -n "${USER_B_STATE_JSON:-}" ]]; then
+  materialize_state_json USER_B_STATE_JSON user-b-state.json
+  USER_B_STATE="$materialized_state_path"
+  export USER_B_STATE
+fi
 
-: "${USER_A_STATE:?USER_A_STATE or USER_A_STATE_JSON is required}"
+# Do not propagate the inline authentication state to acceptance child processes.
+unset USER_A_STATE_JSON USER_B_STATE_JSON
+
+: "${USER_A_STATE:?USER_A_STATE file or USER_A_STATE_JSON fallback is required}"
 node ops/validate-user-a-state.mjs "$USER_A_STATE" USER_A_STATE
 if [[ -n "${USER_B_STATE:-}" ]]; then
   node ops/validate-user-a-state.mjs "$USER_B_STATE" USER_B_STATE
 fi
+
+# Secret JSON is never logged or persisted in the checkout. The fallback above
+# exists only in a private runtime directory and is removed on exit.
 
 BASE_URL="$BASE_URL" NIAKOFA_API_ORIGIN="$NIAKOFA_API_ORIGIN" USER_A_STATE="$USER_A_STATE" USER_B_STATE="${USER_B_STATE:-}" EXPECTED_COMMIT="$EXPECTED_COMMIT" node --input-type=module <<'NODE'
 import fs from "node:fs";

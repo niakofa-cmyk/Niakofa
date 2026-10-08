@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -51,9 +51,11 @@ function runGenerator(env) {
   });
 }
 
-function runValidator(statePath) {
+function runValidator(statePath, requiredOrigin) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["ops/validate-user-a-state.mjs", statePath]);
+    const args = ["ops/validate-user-a-state.mjs", statePath];
+    if (requiredOrigin) args.push("USER_A_STATE", requiredOrigin);
+    const child = spawn(process.execPath, args);
     let stderr = "";
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.on("close", (status) => resolve({ status, stderr }));
@@ -116,6 +118,64 @@ test("validator rejects weak-permission and symbolic-link state files", async ()
     assert.match(linked.stderr, /symbolic links/);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("validator accepts a private state file under the ignored workspace .auth directory", async () => {
+  const repositoryRoot = path.resolve(import.meta.dirname, "..");
+  const authDirectory = path.join(repositoryRoot, ".auth");
+  let createdAuthDirectory = false;
+  let stateDirectory;
+
+  try {
+    try {
+      const directoryInfo = await lstat(authDirectory);
+      assert.ok(directoryInfo.isDirectory() && !directoryInfo.isSymbolicLink());
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      await mkdir(authDirectory, { mode: 0o700 });
+      createdAuthDirectory = true;
+    }
+
+    stateDirectory = await mkdtemp(path.join(authDirectory, "validation-test-"));
+    const statePath = path.join(stateDirectory, "state.json");
+    await writeFile(statePath, JSON.stringify(validState), { mode: 0o600 });
+
+    const result = await runValidator(statePath);
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    if (stateDirectory) await rm(stateDirectory, { recursive: true, force: true });
+    if (createdAuthDirectory) await rmdir(authDirectory).catch(() => {});
+  }
+});
+
+test("validator can require Niakofa authentication entries on a specific origin", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-state-test-"));
+  const statePath = path.join(tempDir, "state.json");
+  try {
+    await writeFile(statePath, JSON.stringify(validState), { mode: 0o600 });
+
+    const matchingOrigin = await runValidator(statePath, "https://example.test");
+    assert.equal(matchingOrigin.status, 0, matchingOrigin.stderr);
+
+    const mismatchedOrigin = await runValidator(statePath, "https://niakofa.com");
+    assert.notEqual(mismatchedOrigin.status, 0);
+    assert.match(mismatchedOrigin.stderr, /state does not contain the required origin/);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("validator continues to reject state files elsewhere inside the repository", async () => {
+  const repositoryRoot = path.resolve(import.meta.dirname, "..");
+  const statePath = path.join(repositoryRoot, `.state-validation-${process.pid}.json`);
+  try {
+    await writeFile(statePath, JSON.stringify(validState), { mode: 0o600 });
+    const result = await runValidator(statePath);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /in-repository state files are not allowed/);
+  } finally {
+    await rm(statePath, { force: true });
   }
 });
 

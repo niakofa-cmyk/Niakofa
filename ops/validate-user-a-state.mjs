@@ -5,6 +5,7 @@ import path from "node:path";
 
 const stateName = process.argv[3] || "USER_A_STATE";
 const statePath = process.argv[2] || process.env[stateName];
+const requiredOriginInput = process.argv[4] || "";
 
 function fail(message) {
   console.error(`${stateName} validation failed: ${message}`);
@@ -12,6 +13,27 @@ function fail(message) {
 }
 
 if (!statePath) fail(`provide a storage-state path as the first argument or ${stateName}.`);
+
+let requiredOrigin = null;
+if (requiredOriginInput) {
+  let parsedRequiredOrigin;
+  try {
+    parsedRequiredOrigin = new URL(requiredOriginInput);
+  } catch {
+    fail("the required origin must be a credential-free HTTP(S) origin.");
+  }
+  if (
+    !["http:", "https:"].includes(parsedRequiredOrigin.protocol) ||
+    parsedRequiredOrigin.username ||
+    parsedRequiredOrigin.password ||
+    parsedRequiredOrigin.search ||
+    parsedRequiredOrigin.hash ||
+    parsedRequiredOrigin.pathname !== "/"
+  ) {
+    fail("the required origin must be a credential-free HTTP(S) origin.");
+  }
+  requiredOrigin = parsedRequiredOrigin.origin;
+}
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const resolvedPath = path.resolve(statePath);
@@ -29,18 +51,27 @@ try {
 } catch {
   fail("the file could not be resolved safely.");
 }
-if (resolvedPath === repositoryRoot || resolvedPath.startsWith(`${repositoryRoot}${path.sep}`)) {
-  fail("in-repository state files are not allowed.");
-}
-try {
+const relativePath = path.relative(repositoryRoot, resolvedPath);
+const isInsideRepository = relativePath === "" ||
+  (relativePath !== ".." && !relativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(relativePath));
+if (isInsideRepository) {
+  if (!relativePath.startsWith(`.auth${path.sep}`)) {
+    fail("in-repository state files are not allowed outside the ignored .auth directory.");
+  }
+
   const { spawnSync } = await import("node:child_process");
-  const result = spawnSync("git", ["-C", repositoryRoot, "ls-files", "--error-unmatch", "--", resolvedPath], {
+  const tracked = spawnSync("git", ["-C", repositoryRoot, "ls-files", "--error-unmatch", "--", relativePath], {
     encoding: "utf8",
     stdio: ["ignore", "ignore", "ignore"],
   });
-  if (result.status === 0) fail("tracked state files are not allowed.");
-} catch (error) {
-  if (error?.message?.includes("tracked state")) throw error;
+  if (tracked.status === 0) fail("tracked state files are not allowed.");
+  if (tracked.status !== 1) fail("could not verify workspace auth-state tracking.");
+
+  const ignored = spawnSync("git", ["-C", repositoryRoot, "check-ignore", "--quiet", "--", relativePath], {
+    encoding: "utf8",
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+  if (ignored.status !== 0) fail("workspace-local state files under .auth must be git-ignored.");
 }
 
 let state;
@@ -66,6 +97,9 @@ if (state.origins.length === 0) fail("origins must not be empty.");
 
 let tokenCount = 0;
 let userCount = 0;
+let requiredOriginFound = false;
+let requiredOriginTokenCount = 0;
+let requiredOriginUserCount = 0;
 const origins = new Set();
 for (const origin of state.origins) {
   if (!origin || typeof origin !== "object" || typeof origin.origin !== "string") {
@@ -84,6 +118,8 @@ for (const origin of state.origins) {
   const normalizedOrigin = parsedOrigin.origin;
   if (origins.has(normalizedOrigin)) fail("storage state must not repeat an origin.");
   origins.add(normalizedOrigin);
+  const isRequiredOrigin = normalizedOrigin === requiredOrigin;
+  if (isRequiredOrigin) requiredOriginFound = true;
   if (!Array.isArray(origin.localStorage)) {
     fail("each origin must contain a localStorage array.");
   }
@@ -93,10 +129,12 @@ for (const origin of state.origins) {
     }
     if (entry.name === "niakofa_token") {
       tokenCount += 1;
+      if (isRequiredOrigin) requiredOriginTokenCount += 1;
       if (!entry.value || entry.value.split(".").length !== 4) fail("niakofa_token is not a Niakofa token shape.");
     }
     if (entry.name === "niakofa_user") {
       userCount += 1;
+      if (isRequiredOrigin) requiredOriginUserCount += 1;
       let user;
       try { user = JSON.parse(entry.value); } catch { fail("niakofa_user is not valid JSON."); }
       if (!user || typeof user !== "object" || !Number.isInteger(Number(user.id)) || Number(user.id) <= 0) {
@@ -125,6 +163,12 @@ for (const origin of state.origins) {
 
 if (tokenCount !== 1 || userCount !== 1) {
   fail("state must contain exactly one niakofa_token and one niakofa_user entry.");
+}
+if (requiredOrigin && !requiredOriginFound) {
+  fail("state does not contain the required origin.");
+}
+if (requiredOrigin && (requiredOriginTokenCount !== 1 || requiredOriginUserCount !== 1)) {
+  fail("the required origin must contain the Niakofa authentication entries.");
 }
 
 process.stdout.write("PASS: storageState shape ok\n");
