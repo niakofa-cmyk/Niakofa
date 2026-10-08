@@ -46,6 +46,18 @@ Service status and variable names alone cannot distinguish the target.
 Use an approved read-only SQL session for extension, geography-column, trigger,
 and index verification before claiming production schema readiness.
 
+As of 2026-10-08, Railway reports an existing active TCP proxy on the production
+PostGIS service forwarding to PostgreSQL port 5432. The proxy was inspected but
+not created or changed.
+
+**Why:** The proxy can provide network reachability for an operator's PostgreSQL
+client, but it does not prove database authorization or that the account is
+read-only.
+
+**How to apply:** Prefer the existing proxy for an operator-run diagnostic when
+the operator has an approved account. Never create a proxy or infer read-only
+privileges from its active status.
+
 ## Credential validation
 
 Secret presence or secure-form confirmation does not prove that a Replit process can authenticate with the saved connection value. An operator's successful interactive login also does not validate a URI's password encoding or the value saved in Replit.
