@@ -43,6 +43,13 @@ extension availability catalog and post-deployment schema were not queried in
 that session. Railway startup logs below report runner behavior, but do not
 expose migration-ledger entries or prove the current database objects.
 
+A later raw psql transcript attached at 2026-10-09 14:28 UTC, after the
+13:39 UTC deployment, again reports no installed or available PostGIS extensions
+on the confirmed **Postgres** service. It also reports
+`to_regclass('public.exchange_listings')` as `NULL` and confirms that
+`users`/`help_requests` have `lat`/`lng` but no geography columns. This
+transcript does not include migration-ledger entries.
+
 ## Railway deployment log evidence
 
 Railway's read-only deployment inventory shows that commits `f1eb2745`
@@ -52,13 +59,18 @@ deployment was current at the last check (13:39 UTC). The agent did not call a
 deploy action; pushes to `main` trigger this Railway service automatically.
 
 Both deployment startup logs report `postgis extension ensured` followed by
-`up to date — no new migrations to apply`. The migration runner checks
-`pg_available_extensions` and runs `CREATE EXTENSION IF NOT EXISTS postgis`
-before checking for pending migration files. Since the operator's earlier
-transcript reported no installed PostGIS extension, the first deployment likely
-installed it; the current installed state has not been independently rechecked.
-The “no new migrations” summary means no migration files ran, not that startup
-made no database writes.
+`up to date — no new migrations to apply`. The runner emits the first message
+only when `pg_available_extensions` returns PostGIS and its subsequent
+`CREATE EXTENSION IF NOT EXISTS postgis` succeeds. The later psql transcript
+from the confirmed **Postgres** service still reports PostGIS as neither
+installed nor available. These results cannot describe the same database
+instance at the same time. The logs establish that the runner used a
+PostGIS-capable connection, but do not establish that it was the service
+inspected by psql. Although the operator previously confirmed that the
+production `DATABASE_URL` reference points to **Postgres**, the current
+effective runtime target needs reconciliation without revealing the URL value.
+The “no new migrations” summary is only for the runner's connection; it does
+not establish the migration state of the inspected Postgres service.
 
 ## Assessment and remaining verification
 
@@ -69,19 +81,26 @@ made no database writes.
   `0159_exchange_local_pickup.sql` creates that table, while migrations
   `0181_exchange_geography.sql` and `0182_exchange_geography_repair.sql` provide
   the PostGIS and plain-PostgreSQL geography-column paths. Exchange queries
-  still require the table. The reported absence is consistent with an
-  incomplete schema or later schema drift, but the transcript does not identify
-  which migration or change caused it.
-- The actual applied migration entries, whether PostGIS is available to install,
-  live Exchange route behavior, and production query plans remain unverified.
-  The updated diagnostic reports the latest entries from both supported
-  migration ledgers, marks missing or empty ledgers, and reports PostGIS
-  availability. Its new output has not been queried against production.
-- Neither deployment ran pending migration files, so neither ran
-  `0159_exchange_local_pickup.sql` to recreate the missing Exchange table. The
-  table's post-deployment state still needs a read-only check. A ledger that
-  reports no pending migrations alongside missing schema objects would indicate
-  schema/ledger drift, but the exact cause is not established.
+  still require the table. An earlier attached diagnostic summary reports that
+  the separate **PostGIS** service has two `exchange_listings` rows. If accurate,
+  those rows are in a different database from the confirmed app **Postgres**
+  target and cannot satisfy Exchange queries made there.
+- The runner's recovery checks do not include migration `0159` or
+  `exchange_listings`. If the app Postgres ledger records `0159` as applied while
+  the table is absent, the runner will skip the migration and its recovery
+  checks will not re-queue it. This is a plausible schema-drift mechanism, not
+  yet confirmed because the app Postgres ledger entries have not been supplied.
+- The updated diagnostic now reports the latest entries from both supported
+  ledgers, marks missing or empty ledgers, and reports PostGIS availability.
+  Its ledger section has not yet been run against the app Postgres service.
+  Current Exchange route behavior and production query plans also remain
+  unverified.
+- The production Postgres transcript confirms the table remains absent after
+  the deployments. The logs' “no new migrations” result belongs to a
+  PostGIS-capable connection whose target has not been reconciled with that
+  Postgres service. The exact cause requires the current `DATABASE_URL`
+  reference source (name only) and the app Postgres ledger rows for migrations
+  `0159`, `0181`, and `0182`.
 - The agent did not connect to production Postgres, issue SQL against
   production, change `DATABASE_URL`, or explicitly deploy. Automatic
   production deployments did occur after the commits to `main`; no further
