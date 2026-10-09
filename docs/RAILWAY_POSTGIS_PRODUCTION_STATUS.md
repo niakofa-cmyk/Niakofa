@@ -38,10 +38,10 @@ independently. The transcript reports:
   exist. The transcript also lists the migration-ledger tables, but not their
   applied migration entries.
 
-These observations describe the supplied session only. The extension
-availability catalog and post-deployment schema were not queried. Railway
-startup logs below report runner behavior, but do not expose migration-ledger
-entries or prove the current database objects.
+These observations describe the supplied pre-deployment session only. The
+extension availability catalog and post-deployment schema were not queried in
+that session. Railway startup logs below report runner behavior, but do not
+expose migration-ledger entries or prove the current database objects.
 
 ## Railway deployment log evidence
 
@@ -72,16 +72,20 @@ made no database writes.
   still require the table. The reported absence is consistent with an
   incomplete schema or later schema drift, but the transcript does not identify
   which migration or change caused it.
-- The applied migration entries, current PostGIS installation/availability,
+- The actual applied migration entries, whether PostGIS is available to install,
   live Exchange route behavior, and production query plans remain unverified.
+  The updated diagnostic reports the latest entries from both supported
+  migration ledgers, marks missing or empty ledgers, and reports PostGIS
+  availability. Its new output has not been queried against production.
 - Neither deployment ran pending migration files, so neither ran
   `0159_exchange_local_pickup.sql` to recreate the missing Exchange table. The
   table's post-deployment state still needs a read-only check. A ledger that
   reports no pending migrations alongside missing schema objects would indicate
   schema/ledger drift, but the exact cause is not established.
-- The agent did not connect to Postgres, issue SQL, change `DATABASE_URL`, or
-  explicitly deploy. Automatic production deployments did occur after the
-  commits to `main`; no further publication or deployment action is being taken.
+- The agent did not connect to production Postgres, issue SQL against
+  production, change `DATABASE_URL`, or explicitly deploy. Automatic
+  production deployments did occur after the commits to `main`; no further
+  publication or deployment action is being taken.
 
 Use the read-only query set in
 [`runbooks/production-postgis-diagnostic.sql`](runbooks/production-postgis-diagnostic.sql)

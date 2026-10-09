@@ -18,7 +18,7 @@ SELECT
   current_setting('server_version') AS server_version,
   current_setting('transaction_read_only') AS transaction_read_only;
 
--- 2. Installed extensions. An empty PostGIS row means the extension is absent.
+-- 2. Installed extensions.
 SELECT
   e.extname AS extension_name,
   e.extversion AS extension_version,
@@ -28,7 +28,18 @@ JOIN pg_namespace AS n
   ON n.oid = e.extnamespace
 ORDER BY e.extname;
 
--- 3. Request/routing/helper-related application tables and views.
+-- 3. Whether the server has PostGIS files available for installation. This
+-- reports extension availability, not the current role's CREATE privilege.
+SELECT
+  expected.extension_name,
+  available.default_version IS NOT NULL AS available_to_install,
+  available.default_version,
+  available.installed_version
+FROM (VALUES ('postgis'::text)) AS expected(extension_name)
+LEFT JOIN pg_available_extensions AS available
+  ON available.name = expected.extension_name;
+
+-- 4. Request/routing/helper-related application tables and views.
 SELECT
   n.nspname AS schema_name,
   c.relname AS object_name,
@@ -49,7 +60,7 @@ WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND c.relname ~* '(request|route|helper|location|arrival|dispatch|trip|job|user|profile)'
 ORDER BY n.nspname, c.relname;
 
--- 4. Spatial columns in any application schema. format_type includes type
+-- 5. Spatial columns in any application schema. format_type includes type
 -- modifiers (for example, geography(Point,4326)) when they are present.
 SELECT
   n.nspname AS schema_name,
@@ -71,7 +82,7 @@ WHERE a.attnum > 0
   AND n.nspname NOT IN ('pg_catalog', 'information_schema')
 ORDER BY n.nspname, c.relname, a.attname;
 
--- 5. Niakofa geography columns expected by the canonical migrations.
+-- 6. Niakofa geography columns expected by the canonical migrations.
 -- A text column is a fallback, not evidence of PostGIS geography support.
 WITH expected(schema_name, table_name, column_name) AS (
   VALUES
@@ -103,7 +114,7 @@ LEFT JOIN pg_attribute AS a
  AND NOT a.attisdropped
 ORDER BY e.table_name;
 
--- 6. GiST/SP-GiST indexes that directly include spatial columns. Definitions
+-- 7. GiST/SP-GiST indexes that directly include spatial columns. Definitions
 -- show the indexed expression and any partial-index predicate.
 SELECT
   n.nspname AS schema_name,
@@ -135,7 +146,7 @@ WHERE a.attnum > 0
   AND n.nspname NOT IN ('pg_catalog', 'information_schema')
 ORDER BY n.nspname, c.relname, a.attname, i.relname;
 
--- 7. Canonical index names. Check the definitions above to ensure that an
+-- 8. Canonical index names. Check the definitions above to ensure that an
 -- existing index covers the expected table and geography column.
 WITH expected(schema_name, table_name, index_name) AS (
   VALUES
@@ -171,7 +182,7 @@ LEFT JOIN pg_am AS am
   ON am.oid = i.relam
 ORDER BY e.table_name;
 
--- 8. Expected geography synchronization triggers.
+-- 9. Expected geography synchronization triggers.
 -- O=origin/local, D=disabled, R=replica, A=always.
 WITH expected(schema_name, table_name, trigger_name) AS (
   VALUES
@@ -199,7 +210,7 @@ LEFT JOIN pg_trigger AS t
  AND NOT t.tgisinternal
 ORDER BY e.table_name;
 
--- 9. Migration ledgers, without assuming which runner is installed.
+-- 10. Migration ledgers, without assuming which runner is installed.
 SELECT
   table_schema,
   table_name
@@ -208,7 +219,76 @@ WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
   AND table_name IN ('_migrations_applied', '__drizzle_migrations')
 ORDER BY table_schema, table_name;
 
--- 10. Foreign keys for request/routing/helper-related tables.
+-- 11. Latest recorded migration entries from each supported ledger.
+-- These psql conditionals keep this section safe when either ledger is absent.
+-- The app runner creates its ledger in public; the legacy Drizzle ledger is in
+-- the drizzle schema. The latest 20 entries are shown. Drizzle stores hashes
+-- rather than migration filenames, so its hash is the recorded identifier.
+SELECT to_regclass('public._migrations_applied') IS NOT NULL
+  AS has_app_migration_ledger
+\gset
+\if :has_app_migration_ledger
+SELECT
+  '_migrations_applied' AS ledger,
+  filename AS migration,
+  applied_at AS recorded_at,
+  'applied' AS status
+FROM public._migrations_applied
+UNION ALL
+SELECT
+  '_migrations_applied',
+  NULL::text,
+  NULL::timestamptz,
+  'empty'
+WHERE NOT EXISTS (SELECT 1 FROM public._migrations_applied)
+ORDER BY recorded_at DESC NULLS LAST, migration DESC NULLS LAST
+LIMIT 20;
+\else
+SELECT
+  '_migrations_applied' AS ledger,
+  NULL::text AS migration,
+  NULL::timestamptz AS recorded_at,
+  'absent' AS status;
+\endif
+
+SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL
+  AS has_drizzle_migration_ledger
+\gset
+\if :has_drizzle_migration_ledger
+SELECT
+  'drizzle.__drizzle_migrations' AS ledger,
+  id,
+  hash,
+  created_at,
+  CASE
+    WHEN created_at IS NOT NULL
+      THEN to_timestamp(created_at::double precision / 1000.0)
+    ELSE NULL
+  END AS recorded_at,
+  'applied' AS status
+FROM drizzle.__drizzle_migrations
+UNION ALL
+SELECT
+  'drizzle.__drizzle_migrations',
+  NULL::integer,
+  NULL::text,
+  NULL::bigint,
+  NULL::timestamptz,
+  'empty'
+WHERE NOT EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations)
+ORDER BY created_at DESC NULLS LAST, id DESC NULLS LAST
+LIMIT 20;
+\else
+SELECT
+  'drizzle.__drizzle_migrations' AS ledger,
+  NULL::integer AS id,
+  NULL::text AS hash,
+  NULL::bigint AS created_at,
+  NULL::timestamptz AS recorded_at,
+  'absent' AS status;
+\endif
+
+-- 12. Foreign keys for request/routing/helper-related tables.
 SELECT
   ns_child.nspname AS schema_name,
   child.relname AS table_name,
@@ -224,7 +304,7 @@ WHERE con.contype = 'f'
   AND ns_child.nspname NOT IN ('pg_catalog', 'information_schema')
 ORDER BY ns_child.nspname, child.relname, con.conname;
 
--- 11. Execute a PostGIS smoke test only when the extension is installed.
+-- 13. Execute a PostGIS smoke test only when the extension is installed.
 -- Uses constant points only; no application coordinates or rows are read.
 DO $postgis_smoke$
 DECLARE
