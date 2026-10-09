@@ -44,17 +44,19 @@ Exit codes:
 ## Railway production gate
 
 The operator confirmed that Railway's production `zesty-ambition` service
-references the dedicated **PostGIS** service for `DATABASE_URL`
+references the **Postgres** service for `DATABASE_URL`; the separate **PostGIS**
+service is not the app's configured database
 ([current status](RAILWAY_POSTGIS_PRODUCTION_STATUS.md)). This verifies the
-configured target only; it does not prove the extension, migrations, columns, or
-indexes are present in that database.
+configured target only; it does not prove the `postgis` extension, migrations,
+columns, triggers, or indexes are present in the app's Postgres database.
 
 Before treating a production geometry report as evidence, run the read-only
 checks in
 [`runbooks/production-postgis-diagnostic.sql`](runbooks/production-postgis-diagnostic.sql)
-from an approved session connected to that PostGIS service. Never paste or
-record the connection string. Service health and variable names are not
-substitutes for a database query.
+from an approved read-only session connected to the **Postgres** service
+referenced by the app. Do not use the separate PostGIS service or its TCP proxy
+as a substitute. Never paste or record the connection string. Service health and
+variable names are not substitutes for a database query.
 
 ## Promotion rule
 

@@ -27,14 +27,27 @@ An existing TCP proxy only proves network forwarding; it does not establish a re
 
 ## PostGIS maintenance
 
-When Niakofa is backed by separate Railway PostgreSQL services, `DATABASE_URL` must target the dedicated PostGIS service rather than the plain PostgreSQL service. For an explicitly authorized schema repair, use the repository's idempotent migration runner with the operator-provided secret transiently, then verify the `postgis` extension and required `geography` columns with read-only queries. Never print, persist, or commit the connection string.
+When Niakofa is backed by separate Railway PostgreSQL services, verify which
+service `DATABASE_URL` actually references before drawing conclusions. A service
+named `PostGIS` is not proof that the app uses it, and a service named `Postgres`
+may still have the PostGIS extension installed. For an explicitly authorized
+schema repair, use the repository's idempotent migration runner with the
+operator-provided secret transiently, then verify the extension and required
+`geography` columns with read-only queries. Never print, persist, or commit the
+connection string.
 
-**Why:** The Railway MCP can inspect infrastructure but is not itself a SQL client, while the application depends on PostGIS geography types. A healthy Railway service or successful TCP connection alone does not prove that the application is using the spatial database.
+**Why:** Railway metadata and service names do not prove the configured target
+or its schema. The application can use PostGIS-backed queries with a fallback,
+so the extension and schema must be checked on the actual application database.
 
-**How to apply:** Confirm the intended Railway database target before mutation, run migrations fail-closed, verify the extension and schema afterward, and keep Haversine fallback only for environments that intentionally lack PostGIS.
+**How to apply:** Confirm the operator-visible variable reference and run
+read-only extension/schema checks against that service before claiming
+production readiness or planning a repair. Keep the Haversine fallback only for
+environments that intentionally lack PostGIS.
 
 As of 2026-10-08, the operator confirmed in Railway's Variables view that the
-production `zesty-ambition` service references **PostGIS** for `DATABASE_URL`.
+production `zesty-ambition` service references **Postgres** for `DATABASE_URL`.
+The separate **PostGIS** service is live but is not the app's configured target.
 This resolves the configured target, but not the live schema or runtime query
 behavior; no production SQL was run for that confirmation.
 
@@ -42,21 +55,23 @@ behavior; no production SQL was run for that confirmation.
 variables, while the connected Railway metadata omits the reference expression.
 Service status and variable names alone cannot distinguish the target.
 
-**How to apply:** Treat the operator-confirmed reference as wiring evidence only.
-Use an approved read-only SQL session for extension, geography-column, trigger,
-and index verification before claiming production schema readiness.
+**How to apply:** Treat the operator-confirmed Postgres reference as wiring
+evidence only. Use an approved read-only SQL session against that app target for
+extension, geography-column, trigger, and index verification before claiming
+production schema readiness.
 
 As of 2026-10-08, Railway reports an existing active TCP proxy on the production
 PostGIS service forwarding to PostgreSQL port 5432. The proxy was inspected but
-not created or changed.
+not created or changed. It belongs to the separate PostGIS service, not the
+app's Postgres target.
 
 **Why:** The proxy can provide network reachability for an operator's PostgreSQL
 client, but it does not prove database authorization or that the account is
 read-only.
 
-**How to apply:** Prefer the existing proxy for an operator-run diagnostic when
-the operator has an approved account. Never create a proxy or infer read-only
-privileges from its active status.
+**How to apply:** Do not use the separate PostGIS proxy to inspect the app's
+Postgres database. Use an approved query path for the confirmed app target.
+Never create a proxy or infer read-only privileges from active status.
 
 ## Credential validation
 

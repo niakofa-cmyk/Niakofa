@@ -1,23 +1,78 @@
--- Read-only PostGIS schema diagnostic.
--- Confirm the session targets Railway's PostGIS service before running.
--- This script does not read application rows or change database state.
+-- Read-only diagnostic for the Railway PostgreSQL service referenced by
+-- zesty-ambition's DATABASE_URL. Do NOT run against the separate service named
+-- PostGIS as a substitute for the app's Postgres target.
+-- It reads catalogs and tests PostGIS functions on constant points only; it
+-- does not read application rows or change database state.
+--
+-- Run from psql only after establishing an approved connection to the app's
+-- Postgres service with a read-only role. Termux's unset DATABASE_URL and the
+-- separate PostGIS service's connection are not substitutes.
 
 BEGIN TRANSACTION READ ONLY;
 
--- Database identity and server version; no host or connection string is shown.
+-- 1. Connection identity and read-only transaction state; no host or URL.
 SELECT
   current_database() AS database_name,
-  current_setting('server_version') AS server_version;
+  current_user AS database_role,
+  current_schema() AS current_schema,
+  current_setting('server_version') AS server_version,
+  current_setting('transaction_read_only') AS transaction_read_only;
 
--- An empty result means PostGIS is not installed in this database.
+-- 2. Installed extensions. An empty PostGIS row means the extension is absent.
 SELECT
-  extname,
-  extversion
-FROM pg_extension
-WHERE extname = 'postgis';
+  e.extname AS extension_name,
+  e.extversion AS extension_version,
+  n.nspname AS extension_schema
+FROM pg_extension AS e
+JOIN pg_namespace AS n
+  ON n.oid = e.extnamespace
+ORDER BY e.extname;
 
--- Expected application geography columns from the canonical migrations.
--- The type is included so a text fallback is distinguishable from geography.
+-- 3. Request/routing/helper-related application tables and views.
+SELECT
+  n.nspname AS schema_name,
+  c.relname AS object_name,
+  CASE c.relkind
+    WHEN 'r' THEN 'table'
+    WHEN 'p' THEN 'partitioned table'
+    WHEN 'v' THEN 'view'
+    WHEN 'm' THEN 'materialized view'
+    WHEN 'f' THEN 'foreign table'
+    ELSE c.relkind::text
+  END AS object_type
+FROM pg_class AS c
+JOIN pg_namespace AS n
+  ON n.oid = c.relnamespace
+WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+  AND n.nspname NOT LIKE 'pg_toast%'
+  AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+  AND c.relname ~* '(request|route|helper|location|arrival|dispatch|trip|job|user|profile)'
+ORDER BY n.nspname, c.relname;
+
+-- 4. Spatial columns in any application schema. format_type includes type
+-- modifiers (for example, geography(Point,4326)) when they are present.
+SELECT
+  n.nspname AS schema_name,
+  c.relname AS table_name,
+  a.attname AS column_name,
+  t.typname AS spatial_type,
+  format_type(a.atttypid, a.atttypmod) AS formatted_type,
+  a.attnotnull AS is_not_null
+FROM pg_attribute AS a
+JOIN pg_class AS c
+  ON c.oid = a.attrelid
+JOIN pg_namespace AS n
+  ON n.oid = c.relnamespace
+JOIN pg_type AS t
+  ON t.oid = a.atttypid
+WHERE a.attnum > 0
+  AND NOT a.attisdropped
+  AND t.typname IN ('geometry', 'geography')
+  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY n.nspname, c.relname, a.attname;
+
+-- 5. Niakofa geography columns expected by the canonical migrations.
+-- A text column is a fallback, not evidence of PostGIS geography support.
 WITH expected(schema_name, table_name, column_name) AS (
   VALUES
     ('public', 'users', 'geog'),
@@ -48,8 +103,40 @@ LEFT JOIN pg_attribute AS a
  AND NOT a.attisdropped
 ORDER BY e.table_name;
 
--- Expected GiST index names from the canonical migrations. The definition
--- indicates whether each index is actually built on the expected geog column.
+-- 6. GiST/SP-GiST indexes that directly include spatial columns. Definitions
+-- show the indexed expression and any partial-index predicate.
+SELECT
+  n.nspname AS schema_name,
+  c.relname AS table_name,
+  a.attname AS spatial_column,
+  i.relname AS index_name,
+  am.amname AS index_method,
+  ix.indisvalid AS index_is_valid,
+  ix.indisready AS index_is_ready,
+  pg_get_indexdef(i.oid) AS index_definition
+FROM pg_attribute AS a
+JOIN pg_class AS c
+  ON c.oid = a.attrelid
+JOIN pg_namespace AS n
+  ON n.oid = c.relnamespace
+JOIN pg_index AS ix
+  ON ix.indrelid = c.oid
+JOIN pg_class AS i
+  ON i.oid = ix.indexrelid
+JOIN pg_am AS am
+  ON am.oid = i.relam
+JOIN pg_type AS t
+  ON t.oid = a.atttypid
+WHERE a.attnum > 0
+  AND NOT a.attisdropped
+  AND a.attnum = ANY(ix.indkey)
+  AND am.amname IN ('gist', 'spgist')
+  AND t.typname IN ('geometry', 'geography')
+  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY n.nspname, c.relname, a.attname, i.relname;
+
+-- 7. Canonical index names. Check the definitions above to ensure that an
+-- existing index covers the expected table and geography column.
 WITH expected(schema_name, table_name, index_name) AS (
   VALUES
     ('public', 'users', 'users_geog_gix'),
@@ -84,9 +171,8 @@ LEFT JOIN pg_am AS am
   ON am.oid = i.relam
 ORDER BY e.table_name;
 
--- Expected geography synchronization triggers.
--- trigger_enabled_state uses PostgreSQL's tgenabled code: O=origin/local,
--- D=disabled, R=replica, A=always.
+-- 8. Expected geography synchronization triggers.
+-- O=origin/local, D=disabled, R=replica, A=always.
 WITH expected(schema_name, table_name, trigger_name) AS (
   VALUES
     ('public', 'users', 'trg_users_sync_geog'),
@@ -113,7 +199,7 @@ LEFT JOIN pg_trigger AS t
  AND NOT t.tgisinternal
 ORDER BY e.table_name;
 
--- Discover migration ledgers without assuming either is present.
+-- 9. Migration ledgers, without assuming which runner is installed.
 SELECT
   table_schema,
   table_name
@@ -121,5 +207,95 @@ FROM information_schema.tables
 WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
   AND table_name IN ('_migrations_applied', '__drizzle_migrations')
 ORDER BY table_schema, table_name;
+
+-- 10. Foreign keys for request/routing/helper-related tables.
+SELECT
+  ns_child.nspname AS schema_name,
+  child.relname AS table_name,
+  con.conname AS constraint_name,
+  pg_get_constraintdef(con.oid) AS definition
+FROM pg_constraint AS con
+JOIN pg_class AS child
+  ON child.oid = con.conrelid
+JOIN pg_namespace AS ns_child
+  ON ns_child.oid = child.relnamespace
+WHERE con.contype = 'f'
+  AND child.relname ~* '(request|route|helper|location|arrival|dispatch|trip|job)'
+  AND ns_child.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY ns_child.nspname, child.relname, con.conname;
+
+-- 11. Execute a PostGIS smoke test only when the extension is installed.
+-- Uses constant points only; no application coordinates or rows are read.
+DO $postgis_smoke$
+DECLARE
+  full_version text;
+  spatial_meta record;
+  point_wkt text;
+  point_srid integer;
+  within_200m boolean;
+  distance_meters double precision;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis') THEN
+    RAISE NOTICE 'PostGIS is not installed in this database; spatial function test skipped.';
+    RETURN;
+  END IF;
+
+  FOR spatial_meta IN EXECUTE $metadata$
+    SELECT
+      'geometry'::text AS spatial_kind,
+      f_table_schema AS schema_name,
+      f_table_name AS table_name,
+      f_geometry_column AS column_name,
+      type AS spatial_type,
+      srid,
+      coord_dimension
+    FROM geometry_columns
+    UNION ALL
+    SELECT
+      'geography'::text AS spatial_kind,
+      f_table_schema AS schema_name,
+      f_table_name AS table_name,
+      f_geography_column AS column_name,
+      type AS spatial_type,
+      srid,
+      coord_dimension
+    FROM geography_columns
+    ORDER BY spatial_kind, schema_name, table_name, column_name
+  $metadata$
+  LOOP
+    RAISE NOTICE 'Spatial metadata: kind=%, schema=%, table=%, column=%, type=%, SRID=%, dimensions=%',
+      spatial_meta.spatial_kind,
+      spatial_meta.schema_name,
+      spatial_meta.table_name,
+      spatial_meta.column_name,
+      spatial_meta.spatial_type,
+      spatial_meta.srid,
+      spatial_meta.coord_dimension;
+  END LOOP;
+
+  EXECUTE 'SELECT PostGIS_Full_Version()'
+    INTO full_version;
+
+  EXECUTE $query$
+    SELECT
+      ST_AsText(ST_SetSRID(ST_MakePoint(0, 0), 4326)),
+      ST_SRID(ST_SetSRID(ST_MakePoint(0, 0), 4326)),
+      ST_DWithin(
+        ST_SetSRID(ST_MakePoint(0, 0), 4326)::geography,
+        ST_SetSRID(ST_MakePoint(0.001, 0), 4326)::geography,
+        200
+      ),
+      ST_Distance(
+        ST_SetSRID(ST_MakePoint(0, 0), 4326)::geography,
+        ST_SetSRID(ST_MakePoint(0.001, 0), 4326)::geography
+      )
+  $query$
+    INTO point_wkt, point_srid, within_200m, distance_meters;
+
+  RAISE NOTICE 'PostGIS version: %', full_version;
+  RAISE NOTICE 'Point smoke test: %, SRID %, within 200m %, distance %m',
+    point_wkt, point_srid, within_200m, distance_meters;
+END;
+$postgis_smoke$;
 
 ROLLBACK;
