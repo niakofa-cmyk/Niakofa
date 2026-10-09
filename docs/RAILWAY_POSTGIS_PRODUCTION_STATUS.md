@@ -24,9 +24,10 @@ Last checked: 2026-10-09 (America/Chicago)
 
 ## Operator-supplied read-only production results
 
-On 2026-10-09, the operator supplied a psql transcript and confirmed it came
-from the app's **Postgres** service above. The agent did not connect to the
-production database independently. The transcript reports:
+On 2026-10-09, before the 06:42 UTC automatic Railway deployment, the operator
+supplied a psql transcript and confirmed it came from the app's **Postgres**
+service above. The agent did not connect to the production database
+independently. The transcript reports:
 
 - PostgreSQL 18.6, with no installed `postgis`, `postgis_topology`, or
   `postgis_raster` extension reported.
@@ -37,9 +38,27 @@ production database independently. The transcript reports:
   exist. The transcript also lists the migration-ledger tables, but not their
   applied migration entries.
 
-These observations describe the supplied session only; the extension
-availability catalog, exact migration state, and application runtime were not
-independently checked.
+These observations describe the supplied session only. The extension
+availability catalog and post-deployment schema were not queried. Railway
+startup logs below report runner behavior, but do not expose migration-ledger
+entries or prove the current database objects.
+
+## Railway deployment log evidence
+
+Railway's read-only deployment inventory shows that commits `f1eb2745`
+(started 2026-10-09 06:42 UTC) and `701aa90b` (started 2026-10-09 13:36 UTC)
+each triggered a successful production deployment from `main`. The newer
+deployment was current at the last check (13:39 UTC). The agent did not call a
+deploy action; pushes to `main` trigger this Railway service automatically.
+
+Both deployment startup logs report `postgis extension ensured` followed by
+`up to date — no new migrations to apply`. The migration runner checks
+`pg_available_extensions` and runs `CREATE EXTENSION IF NOT EXISTS postgis`
+before checking for pending migration files. Since the operator's earlier
+transcript reported no installed PostGIS extension, the first deployment likely
+installed it; the current installed state has not been independently rechecked.
+The “no new migrations” summary means no migration files ran, not that startup
+made no database writes.
 
 ## Assessment and remaining verification
 
@@ -53,10 +72,16 @@ independently checked.
   still require the table. The reported absence is consistent with an
   incomplete schema or later schema drift, but the transcript does not identify
   which migration or change caused it.
-- The applied migration entries, whether PostGIS is available to install, live
-  Exchange route behavior, and production query plans remain unverified.
-- No production migration, database change, `DATABASE_URL` change, or deploy
-  was performed.
+- The applied migration entries, current PostGIS installation/availability,
+  live Exchange route behavior, and production query plans remain unverified.
+- Neither deployment ran pending migration files, so neither ran
+  `0159_exchange_local_pickup.sql` to recreate the missing Exchange table. The
+  table's post-deployment state still needs a read-only check. A ledger that
+  reports no pending migrations alongside missing schema objects would indicate
+  schema/ledger drift, but the exact cause is not established.
+- The agent did not connect to Postgres, issue SQL, change `DATABASE_URL`, or
+  explicitly deploy. Automatic production deployments did occur after the
+  commits to `main`; no further publication or deployment action is being taken.
 
 Use the read-only query set in
 [`runbooks/production-postgis-diagnostic.sql`](runbooks/production-postgis-diagnostic.sql)

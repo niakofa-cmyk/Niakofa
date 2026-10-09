@@ -9,9 +9,9 @@ Always verify the canonical public domain and its served commit before treating 
 
 **How to apply:** Use the deployment-configured canonical URL for health, scoped readiness, and visual checks; compare its reported commit with local and origin/main. Treat a Railway fallback 404 as a stale-host signal, not an application regression, unless the canonical URL also fails.
 
-**Why:** In this project, Railway has auto-deployed documentation-only commits even when the GitHub deployment-verification workflow excluded those paths.
+**Why:** In this project, Railway has auto-deployed documentation-only commits even when the GitHub deployment-verification workflow excluded those paths. Application startup can also initialize the database before reporting that no migration files are pending.
 
-**How to apply:** Keep workflow path filters aligned with Railway's observed watch behavior. If a filter skips a push that Railway deploys, still verify the canonical host and served commit.
+**How to apply:** Keep workflow path filters aligned with Railway's observed watch behavior. For a no-deploy or no-database-change task, do not push any commit to `main`. If a push has already triggered a deployment, verify the deployed commit and inspect startup logs; “no new migrations” does not prove that startup made no database writes.
 
 A live Railway service-variable update can redeploy the currently configured source revision rather than the revision that was serving immediately before the change. Treat a variable change that triggers deployment as a code-release boundary: verify the resulting source SHA and readiness before production writes.
 
