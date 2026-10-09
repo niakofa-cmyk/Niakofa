@@ -1,12 +1,12 @@
--- Read-only diagnostic for the Railway PostgreSQL service referenced by
--- zesty-ambition's DATABASE_URL. Do NOT run against the separate service named
--- PostGIS as a substitute for the app's Postgres target.
+-- Read-only diagnostic for the Railway PostGIS service referenced by
+-- zesty-ambition's DATABASE_URL. Do NOT run against the separate ordinary
+-- Postgres service as a substitute for the app's PostGIS target.
 -- It reads catalogs and tests PostGIS functions on constant points only; it
 -- does not read application rows or change database state.
 --
 -- Run from psql only after establishing an approved connection to the app's
--- Postgres service with a read-only role. Termux's unset DATABASE_URL and the
--- separate PostGIS service's connection are not substitutes.
+-- PostGIS service with a read-only role. A connection to the ordinary Postgres
+-- service is not a substitute.
 
 BEGIN TRANSACTION READ ONLY;
 
