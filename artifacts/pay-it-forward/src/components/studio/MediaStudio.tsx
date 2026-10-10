@@ -10,6 +10,8 @@ import {
 import { publishStudioItemAsExchangeSpark, publishStudioItemsAsMoment, saveStudioOriginalsToFamily, type StudioScope } from "./studio-publishers";
 import { useCaptureSession } from "./use-capture-session";
 import type { ExchangeListing } from "@/lib/community-exchange-types";
+import { newStudioPublishId, studioFileFingerprint } from "../community/story-studio-draft";
+import { storiesClient } from "../family/stories-client";
 import "./media-studio.css";
 
 export type MediaStudioResult =
@@ -27,7 +29,9 @@ export type MediaStudioProps = {
   exchangeListingId?: number | null;
   exchangeListings?: ExchangeListing[];
   onExchangeListingChange?: (listingId: string) => void;
+  onExchangeDraftChange?: (draft: { id: number; listingId: string; fingerprint: string } | null) => void;
   familySpaceId?: number | null;
+  onFamilySpaceChange?: (familySpaceId: number | null) => void;
   responseToStoryId?: number | null;
   challengeKey?: string | null;
   initialClientPublishId?: string;
@@ -68,13 +72,18 @@ export function MediaStudio(props: MediaStudioProps) {
   const [adding, setAdding] = useState(false);
   const [workingSetReady, setWorkingSetReady] = useState(false);
   const [selectedListingId, setSelectedListingId] = useState(() => props.exchangeListingId ? String(props.exchangeListingId) : "");
+  const [familySpaces, setFamilySpaces] = useState<Array<{ id: number; name: string }>>([]);
+  const [familySpacesError, setFamilySpacesError] = useState("");
+  const [familySpacesLoading, setFamilySpacesLoading] = useState(false);
+  const publishIdRef = useRef(props.initialClientPublishId ?? newStudioPublishId());
+  const publishSignatureRef = useRef("");
 
   const active = state.items.find((item) => item.id === state.activeId) ?? state.items[state.items.length - 1] ?? null;
   const usedMs = totalVideoMs(state.items);
   const budgetMs = remainingCaptureMs(state.items);
   const availability = useMemo(() => destinationAvailability(state.items, {
-    hasExchangeListing: Boolean(props.exchangeListingId), hasFamilySpace: Boolean(props.familySpaceId),
-  }), [state.items, props.exchangeListingId, props.familySpaceId]);
+    hasExchangeListing: Boolean(selectedListingId || props.exchangeListingId), hasFamilySpace: Boolean(props.familySpaceId || familySpaces.length),
+  }), [state.items, selectedListingId, props.exchangeListingId, props.familySpaceId, familySpaces.length]);
   const offerFamily = needsFamilyOriginalOffer(state.items) && availability.family_story.ok;
 
   // Open: recover files straight into review, otherwise straight into the live camera.
@@ -83,9 +92,20 @@ export function MediaStudio(props: MediaStudioProps) {
     setWorkingSetReady(false);
     dispatch({ type: "reset" });
     setSelectedListingId(props.exchangeListingId ? String(props.exchangeListingId) : "");
+    publishIdRef.current = props.initialClientPublishId ?? newStudioPublishId();
+    publishSignatureRef.current = "";
     archiveIdRef.current = `studio-${Date.now().toString(36)}`;
+    setFamilySpacesError("");
+    setFamilySpacesLoading(true);
+    let active = true;
+    void storiesClient.mine().then(({ families }) => {
+      if (active) setFamilySpaces(families.filter((family) => family.status === "active"
+        && ["owner", "curator", "contributor"].includes(family.my_role)));
+    }).catch((reason: unknown) => {
+      if (active) setFamilySpacesError(reason instanceof Error ? reason.message : "Family Spaces could not be loaded.");
+    }).finally(() => { if (active) setFamilySpacesLoading(false); });
     const files = props.initialFiles ?? [];
-    if (files.length) {
+    if (files.length || props.initialCaption) {
       void Promise.all(files.map((file) => itemFromFile(file, "gallery"))).then((items) => {
         dispatch({ type: "add", items, goReview: true });
         if (props.initialCaption) dispatch({ type: "caption", caption: props.initialCaption });
@@ -95,9 +115,24 @@ export function MediaStudio(props: MediaStudioProps) {
       setWorkingSetReady(true);
       void capture.start();
     }
-    return () => { abortRef.current?.abort(); capture.release(); };
+    return () => { active = false; abortRef.current?.abort(); capture.release(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (!workingSetReady) return;
+    const signature = JSON.stringify({
+      items: state.items.map((item) => studioFileFingerprint(item.file)),
+      caption: state.caption.trim(),
+      destination: state.destination,
+      listingId: selectedListingId,
+    });
+    if (!publishSignatureRef.current) publishSignatureRef.current = signature;
+    else if (publishSignatureRef.current !== signature) {
+      publishSignatureRef.current = signature;
+      publishIdRef.current = newStudioPublishId();
+    }
+  }, [workingSetReady, state.items, state.caption, state.destination, selectedListingId]);
 
   // Camera follows the mode: warm-suspend in review, instant resume in capture.
   useEffect(() => {
@@ -153,6 +188,16 @@ export function MediaStudio(props: MediaStudioProps) {
     const check = availability[state.destination];
     const textOnly = state.destination === "moment" && state.items.length === 0 && state.caption.trim();
     if (!check.ok && !textOnly) { dispatch({ type: "fail", message: check.reason ?? "This destination is not available." }); return; }
+    if ((state.destination === "family_story" || (state.destination === "moment" && state.saveOriginalPrivately))
+      && !props.familySpaceId) {
+      dispatch({ type: "fail", message: "Choose a writable Family Space before saving private originals." });
+      return;
+    }
+    if (props.responseToStoryId && (state.destination !== "moment" || scope.audience !== "community"
+      || !state.items.length || state.items.some((item) => item.kind !== "video"))) {
+      dispatch({ type: "fail", message: "Video responses need one or more video clips shared with your Community as a Moment." });
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
     dispatch({ type: "mode", mode: "publishing" });
@@ -164,14 +209,18 @@ export function MediaStudio(props: MediaStudioProps) {
       }
       const listingId = Number(selectedListingId);
       if (state.destination === "exchange_spark" && Number.isSafeInteger(listingId) && listingId > 0) {
-        const status = await publishStudioItemAsExchangeSpark({ scope, listingId, item: state.items[0], caption: state.caption, signal: controller.signal, onProgress });
+        const status = await publishStudioItemAsExchangeSpark({
+          scope, listingId, item: state.items[0], caption: state.caption, signal: controller.signal, onProgress,
+          onDraftChange: (draft) => props.onExchangeDraftChange?.(draft),
+        });
         onPublished({ kind: "exchange_spark", status });
       } else if (state.destination === "family_story" && props.familySpaceId) {
         await saveStudioOriginalsToFamily({ familyId: props.familySpaceId, archiveId: archiveIdRef.current, caption: state.caption, items: state.items, signal: controller.signal, onProgress });
         onPublished({ kind: "family_story" });
       } else {
         const storyId = await publishStudioItemsAsMoment({
-          scope, items: state.items, caption: state.caption, responseToStoryId: props.responseToStoryId, challengeKey: props.challengeKey, signal: controller.signal, onProgress,
+          scope, items: state.items, caption: state.caption, clientPublishId: publishIdRef.current,
+          responseToStoryId: props.responseToStoryId, challengeKey: props.challengeKey, signal: controller.signal, onProgress,
         });
         onPublished({ kind: "moment", storyId });
       }
@@ -304,7 +353,11 @@ export function MediaStudio(props: MediaStudioProps) {
               <>
                 <h2>Share to</h2>
                 <div className="nk-studio__dests" role="radiogroup" aria-label="Destination">
-                   {(["moment", "exchange_spark", "family_story"] as StudioDestination[]).filter((d) => d !== "exchange_spark" || (props.exchangeListings?.length ?? 0) > 0 || props.exchangeListingId).map((dest) => (
+                   {(["moment", "exchange_spark", "family_story"] as StudioDestination[]).filter((d) => (
+                   props.responseToStoryId ? d === "moment"
+                     : d === "family_story" ? Boolean(props.familySpaceId || familySpaces.length)
+                       : d !== "exchange_spark" || (props.exchangeListings?.length ?? 0) > 0 || props.exchangeListingId
+                 )).map((dest) => (
                     <button key={dest} type="button" role="radio" aria-checked={state.destination === dest} disabled={!availability[dest].ok && !(dest === "moment" && !state.items.length && state.caption.trim())}
                       className={state.destination === dest ? "is-on" : ""} onClick={() => dispatch({ type: "destination", destination: dest })}>
                       <strong>{DEST_LABEL[dest]}</strong>
@@ -312,6 +365,17 @@ export function MediaStudio(props: MediaStudioProps) {
                     </button>
                   ))}
                 </div>
+                {(state.destination === "family_story" || (offerFamily && state.destination === "moment" && state.saveOriginalPrivately)) && (
+                  <label className="nk-studio__listing">
+                    <span>Save originals to a private Family Story</span>
+                    {familySpacesLoading ? <small role="status">Loading writable Family Spaces…</small> : familySpacesError ? <small role="alert">{familySpacesError}</small> : (
+                      <select value={props.familySpaceId ?? ""} onChange={(event) => props.onFamilySpaceChange?.(event.target.value ? Number(event.target.value) : null)} aria-label="Choose a private Family Space">
+                        <option value="">Choose a Family Space</option>
+                        {familySpaces.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}
+                      </select>
+                    )}
+                  </label>
+                )}
                 {state.destination === "exchange_spark" && (
                   <label className="nk-studio__listing">
                     <span>Choose an active Exchange listing</span>

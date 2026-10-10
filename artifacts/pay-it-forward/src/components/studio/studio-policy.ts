@@ -9,6 +9,7 @@
  */
 export const STUDIO_MAX_ITEMS = 6;
 export const CAMERA_CLIP_MAX_MS = 60_000;
+export const MOMENT_CLIP_MAX_MS = CAMERA_CLIP_MAX_MS;
 export const MOMENT_TOTAL_MAX_MS = 180_000;
 /** Above this combined video length the Studio offers a private Family Story original. */
 export const FAMILY_ORIGINAL_OFFER_MS = MOMENT_TOTAL_MAX_MS;
@@ -57,12 +58,14 @@ export function destinationAvailability(
   const hasMedia = items.length > 0;
   const videos = items.filter((item) => item.kind === "video");
   const overMoment = totalVideoMs(items) > MOMENT_TOTAL_MAX_MS;
+  const unverifiedOrLongMomentClip = videos.some((item) => item.durationMs === null || item.durationMs > MOMENT_CLIP_MAX_MS);
   const oversize = items.some((item) => item.file.size > MEDIA_MAX_BYTES);
 
   const cut = momentCutdownIds(items);
   const moment: DestinationState = !hasMedia
     ? { ok: false, reason: "Add a photo or video first." }
     : oversize ? { ok: false, reason: "An item is larger than 64 MB." }
+    : unverifiedOrLongMomentClip ? { ok: false, reason: "Moment video clips must be verified and 60 seconds or shorter." }
     : overMoment && cut.length === 0 ? { ok: false, reason: "The first video is longer than 3 minutes. Trim it, or save it privately as a Family Story." }
     : overMoment ? { ok: true, note: "Over 3 minutes: your Moment uses the earliest clips that fit. Originals are never changed." }
     : { ok: true };

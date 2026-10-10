@@ -114,6 +114,7 @@ export async function publishStudioItemAsExchangeSpark(input: {
   caption: string;
   signal: AbortSignal;
   onProgress: StudioProgress;
+  onDraftChange?: (draft: { id: number; listingId: string; fingerprint: string } | null) => void;
 }): Promise<"published" | "pending"> {
   const { item, signal } = input;
   if (item.kind !== "video") throw new Error("Exchange Sparks are a single video.");
@@ -123,6 +124,9 @@ export async function publishStudioItemAsExchangeSpark(input: {
     let remoteId = stored?.exchangeDraftId ?? null;
     let savedListingId = stored?.destinationListingId ? Number(stored.destinationListingId) : input.listingId;
     let savedFingerprint = stored?.exchangeFileFingerprint;
+    if (remoteId !== null && savedFingerprint) {
+      input.onDraftChange?.({ id: remoteId, listingId: String(savedListingId), fingerprint: savedFingerprint });
+    }
     let draftState: StudioDraft = stored ?? {
       id: studioDraftKey(input.scope.userId, input.scope.hubId),
       userId: input.scope.userId,
@@ -157,6 +161,7 @@ export async function publishStudioItemAsExchangeSpark(input: {
       savedFingerprint = fingerprint;
       draftState = { ...draftState, exchangeDraftId: remoteId, exchangeFileFingerprint: fingerprint };
       await saveStudioDraft(draftState);
+      input.onDraftChange?.({ id: remoteId, listingId: String(input.listingId), fingerprint });
       try { saveExchangeSparkDraftId(remoteId); } catch { /* IndexedDB remains the recovery authority. */ }
       action = "create-upload";
     } else {
@@ -178,14 +183,16 @@ export async function publishStudioItemAsExchangeSpark(input: {
     if (status && status.caption !== input.caption.trim()) await updateExchangeSparkDraftCaption(remoteId, input.caption.trim(), signal);
     draftState = { ...draftState, exchangeDraftId: remoteId, exchangeFileFingerprint: fingerprint, caption: input.caption, updatedAt: Date.now() };
     await saveStudioDraft(draftState);
+    let completeUrl: string | null = null;
     if (action === "create-upload" || action === "resume-upload") {
       const asset = status?.media_assets[0];
       if (asset?.status === "failed") {
-        await completeSparkUpload(`/api/media-assets/${asset.media_asset_id}/complete`, signal);
+        completeUrl = `/api/media-assets/${asset.media_asset_id}/complete`;
       } else {
         const session = asset
           ? resumeSparkUploadSession(asset.media_asset_id, item.file)
           : await createSparkUploadSession({ contextId: remoteId, file: item.file, signal });
+        completeUrl = session.complete_url;
         input.onProgress("Preparing secure upload…", 5);
         let lastFailure: unknown;
         let uploaded = false;
@@ -202,13 +209,9 @@ export async function publishStudioItemAsExchangeSpark(input: {
         }
         if (!uploaded) throw lastFailure instanceof Error ? lastFailure : new Error("The video could not be uploaded.");
       }
+      if (!completeUrl) throw new Error("The Exchange upload session did not provide a completion endpoint.");
       input.onProgress("Checking your video…", 88);
-      await completeSparkUpload(`/api/media-assets/${status?.media_assets[0]?.media_asset_id ?? ""}/complete`, signal).catch(async (reason) => {
-        if (asset?.status === "failed") throw reason;
-        // The upload-session completion URL is the authoritative endpoint; the
-        // fallback above is intentionally not used when a fresh session exists.
-        throw reason;
-      });
+      await completeSparkUpload(completeUrl, signal);
     }
     if (action === "wait" || action === "create-upload" || action === "resume-upload") {
       await waitForExchangeSparkMediaReady(remoteId, signal, () => input.onProgress("Processing video…", 94));
@@ -217,6 +220,7 @@ export async function publishStudioItemAsExchangeSpark(input: {
     const result = await publishExchangeSparkDraft(remoteId, input.caption.trim(), signal);
     if (result.status !== "published" && result.status !== "pending") throw new Error("The server returned an unknown Spark publication status.");
     await discardStudioDraft(input.scope.userId, input.scope.hubId);
+    input.onDraftChange?.(null);
     try { clearExchangeSparkDraftId(); } catch { /* IndexedDB was already cleared. */ }
     return result.status;
   } catch (reason) {

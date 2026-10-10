@@ -22,8 +22,8 @@ test("capture budget shrinks as clips are chained and never exceeds one clip cap
 });
 
 test("over-cap selections keep earliest whole clips and photos, never alter originals", () => {
-  const items = [item("video", 100_000), item("photo"), item("video", 70_000), item("video", 20_000)];
-  assert.deepEqual(momentCutdownIds(items), [items[0].id, items[1].id, items[2].id]);
+  const items = [item("video", 55_000), item("photo"), item("video", 55_000), item("video", 55_000), item("video", 55_000)];
+  assert.deepEqual(momentCutdownIds(items), [items[0].id, items[1].id, items[2].id, items[3].id]);
   assert.equal(needsFamilyOriginalOffer(items), true);
   assert.equal(needsFamilyOriginalOffer([item("video", 180_000)]), false);
 });
@@ -31,7 +31,7 @@ test("over-cap selections keep earliest whole clips and photos, never alter orig
 test("destinations: moment cut-down allowed, exchange needs listing + single short video, family needs space", () => {
   const ctx = { hasExchangeListing: false, hasFamilySpace: false };
   assert.equal(destinationAvailability([], ctx).moment.ok, false);
-  const long = [item("video", 100_000), item("video", 100_000)];
+  const long = [item("video", 55_000), item("video", 55_000), item("video", 55_000), item("video", 55_000)];
   const over = destinationAvailability(long, ctx);
   assert.equal(over.moment.ok, true);
   assert.match(over.moment.note ?? "", /earliest clips/);
@@ -39,6 +39,8 @@ test("destinations: moment cut-down allowed, exchange needs listing + single sho
   assert.equal(destinationAvailability([item("video", 5000)], ctx).exchange_spark.ok, false);
   const withListing = { hasExchangeListing: true, hasFamilySpace: true };
   assert.equal(destinationAvailability([item("video", 5000)], withListing).exchange_spark.ok, true);
+  assert.equal(destinationAvailability([item("video", 61_000)], withListing).moment.ok, false);
+  assert.equal(destinationAvailability([item("video", 61_000)], withListing).exchange_spark.ok, true);
   assert.equal(destinationAvailability([item("video", 5000), item("photo")], withListing).exchange_spark.ok, false);
   assert.equal(destinationAvailability([item("video", 200_000)], withListing).exchange_spark.ok, false);
   const big = item("video", 5000, { file: file("video/mp4", 30 * 1024 * 1024) });

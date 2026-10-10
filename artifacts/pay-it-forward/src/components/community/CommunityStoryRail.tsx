@@ -1848,12 +1848,17 @@ export function CommunityStoryRail({
           initialCaption={caption}
           exchangeListingId={exchangeListingId ? Number(exchangeListingId) : null}
           exchangeListings={ownedExchangeListings}
+          initialClientPublishId={clientPublishIdRef.current}
           onExchangeListingChange={(listingId) => {
             setExchangeListingId(listingId);
             setFamilyStoryCopyEnabled(false);
             setFamilyStoryFamilyId(null);
           }}
+          onExchangeDraftChange={(draft) => {
+            exchangeDraftRef.current = draft;
+          }}
           familySpaceId={familyStoryFamilyId}
+          onFamilySpaceChange={setFamilyStoryFamilyId}
           responseToStoryId={responseTargetId}
           challengeKey={activeChallengeKey}
           onClose={closeComposer}
