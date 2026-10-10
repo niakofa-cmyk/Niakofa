@@ -27,7 +27,9 @@ test("Exchange Spark retry after reload reuses its saved server draft and upload
     objectStoreNames: { contains: () => true },
     close() {},
     transaction() {
-      const tx: { oncomplete?: () => void; onerror?: () => void; onabort?: () => void } = {};
+      const tx: { oncomplete?: () => void; onerror?: () => void; onabort?: () => void; objectStore: () => unknown } = {
+        objectStore: () => store,
+      };
       const store = {
         put(value: StudioDraft) {
           records.set(value.id, { ...value, files: [...value.files] });
@@ -43,7 +45,7 @@ test("Exchange Spark retry after reload reuses its saved server draft and upload
           queueMicrotask(() => tx.oncomplete?.());
         },
       };
-      return { ...tx, objectStore: () => store };
+      return tx;
     },
   };
   const openDb = {
@@ -114,16 +116,27 @@ test("Exchange Spark retry after reload reuses its saved server draft and upload
   const publish = () => publishStudioItemAsExchangeSpark({
     scope, listingId: 31, item, caption: "Help nearby", signal: new AbortController().signal, onProgress: () => {},
   });
+  const publishWithTimeout = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        publish(),
+        new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error(`Exchange retry stalled at: ${routes.join(" | ")}`)), 3000); }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
 
   try {
-    await assert.rejects(publish(), /Connection lost after publish/);
+    await assert.rejects(publishWithTimeout(), /Connection lost after publish/);
     const saved = await loadStudioDraft(73, null);
     assert.equal(saved?.exchangeDraftId, 915);
     assert.equal(saved?.destinationListingId, "31");
     assert.equal(saved?.exchangeFileFingerprint, studioFileFingerprint(video));
 
     // A second publisher instance represents a page reload; IndexedDB is the only recovery state.
-    assert.equal(await publish(), "published");
+    assert.equal(await publishWithTimeout(), "published");
     assert.equal(draftCreates, 1, "retry must not create another server-owned Spark");
     assert.equal(uploadSessions, 1, "retry must not create another upload session");
     assert.equal(publishAttempts, 2, "retry idempotently republishes the existing Spark ID");
