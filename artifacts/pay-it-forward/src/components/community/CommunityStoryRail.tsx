@@ -79,6 +79,7 @@ import {
 import type { CommunityStory, Effect, StoryAuthor, StoryMedia } from "./story-rail-types";
 import { TEXT_STORY_BACKGROUNDS } from "./story-rail-types";
 import { StoryCameraRecorder } from "./StoryCameraRecorder";
+import { MediaStudio } from "../studio/MediaStudio";
 import { trimVideoFile } from "./story-media-tools";
 import {
   BUILT_IN_STORY_TEMPLATES,
@@ -129,6 +130,7 @@ export function CommunityStoryRail({
   const [location, navigate] = useLocation();
   const { currentUser } = useAppContext();
   const userId = currentUser?.id ?? null;
+  const studioV2 = import.meta.env.VITE_MEDIA_STUDIO_V2 === "true";
   const [stories, setStories] = useState<CommunityStory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -711,7 +713,7 @@ export function CommunityStoryRail({
   }, [draftReady, draftRecoveryFailed, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds, momentAccessibility, cameraClipReelMarker, pendingCameraReelStoryId]);
 
   useEffect(() => {
-    if (!composerOpen) return;
+    if (!composerOpen || studioV2) return;
     let cancelled = false;
     setExchangeListingsLoading(true);
     setExchangeListingsError("");
@@ -1046,7 +1048,7 @@ export function CommunityStoryRail({
     dialog?.querySelector<HTMLElement>("button")?.focus();
     window.addEventListener("keydown", onKey);
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKey); };
-  }, [composerOpen, cameraOpen, galleryOpen, studioStep, draftReady, cancelCamera, closeComposer]);
+  }, [composerOpen, cameraOpen, galleryOpen, studioStep, draftReady, cancelCamera, closeComposer, studioV2]);
 
   const moveToStudioStep = async (
     nextStep: "source" | "edit" | "destination",
@@ -1834,7 +1836,58 @@ export function CommunityStoryRail({
         />
       </section>
 
-      {composerOpen && (
+      {studioV2 && composerOpen && draftReady && !draftRecoveryFailed
+        && activeScopeRef.current === scopeKey
+        && recoveredScopeRef.current === scopeKey
+        && studioEntryInitializedRef.current
+        && userId !== null && (
+        <MediaStudio
+          open
+          scope={{ userId, hubId, audience }}
+          initialFiles={selectedStudioFiles(files, gallerySelection)}
+          initialCaption={caption}
+          exchangeListingId={exchangeListingId ? Number(exchangeListingId) : null}
+          exchangeListings={ownedExchangeListings}
+          onExchangeListingChange={(listingId) => {
+            setExchangeListingId(listingId);
+            setFamilyStoryCopyEnabled(false);
+            setFamilyStoryFamilyId(null);
+          }}
+          familySpaceId={familyStoryFamilyId}
+          responseToStoryId={responseTargetId}
+          challengeKey={activeChallengeKey}
+          onClose={closeComposer}
+          onWorkingSetChange={(items, nextCaption) => {
+            setFiles(items.map((item) => item.file));
+            setGallerySelection(items.map((_, index) => index));
+            setCaption(nextCaption);
+          }}
+          onPublished={(result) => {
+            void (async () => {
+              draftGenerationRef.current++;
+              if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+              await draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-flush"));
+              await discardStudioDraft(userId, hubId);
+              resetComposer();
+              setComposerOpen(false);
+              window.dispatchEvent(new Event("community-moments-refresh"));
+              if (result.kind === "moment") navigate(buildMomentsSparkHref(result.storyId, audience, hubId));
+              else if (result.kind === "exchange_spark") navigate("/community?section=exchange");
+              else if (familyStoryFamilyId) navigate(`/family/${familyStoryFamilyId}`);
+            })().catch(reportClientSideEffectFailure("community.story-studio.publish-cleanup"));
+          }}
+          onPublishError={(reason) => {
+            if (!(reason instanceof CameraClipReelPendingError)) return false;
+            setError(reason.message);
+            setRefreshNonce((value) => value + 1);
+            window.dispatchEvent(new Event("community-moments-refresh"));
+            closeComposer();
+            navigate(buildMomentsSparkHref(reason.storyId, audience, hubId));
+            return true;
+          }}
+        />
+      )}
+      {!studioV2 && composerOpen && (
         draftRecoveryFailed
         || !draftReady
         || activeScopeRef.current !== scopeKey
@@ -1855,7 +1908,7 @@ export function CommunityStoryRail({
           </div>
         </div>
       )}
-      {composerOpen && !cameraOpen && draftReady && !draftRecoveryFailed && activeScopeRef.current === scopeKey && recoveredScopeRef.current === scopeKey && studioEntryInitializedRef.current && (
+      {!studioV2 && composerOpen && !cameraOpen && draftReady && !draftRecoveryFailed && activeScopeRef.current === scopeKey && recoveredScopeRef.current === scopeKey && studioEntryInitializedRef.current && (
         <div className="nia-story-composer-overlay">
           <input ref={galleryInput} type="file" accept={responseTargetId ? "video/*" : "image/*,video/*"} multiple className="sr-only" onChange={onFileChange} aria-label={responseTargetId ? "Choose video response clips" : "Choose Spark media"} disabled={trimming} />
           <div className="nia-story-composer-shell">
@@ -2248,7 +2301,7 @@ export function CommunityStoryRail({
           </div>
         </div>
       )}
-      {cameraOpen && <StoryCameraRecorder
+      {!studioV2 && cameraOpen && <StoryCameraRecorder
         onUse={onCameraVideo}
         onCancel={cancelCamera}
         onGallery={() => { setCameraOpen(false); setGalleryOpen(true); }}
@@ -2311,7 +2364,7 @@ export function CommunityStoryRail({
           } : undefined}
         />
       )}
-      {galleryOpen && composerOpen && draftReady && activeScopeRef.current === scopeKey && (
+      {!studioV2 && galleryOpen && composerOpen && draftReady && activeScopeRef.current === scopeKey && (
         <CommunityStoryGalleryOverlay
           thumbnails={galleryThumbnails}
           selected={gallerySelection}
