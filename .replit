@@ -113,6 +113,7 @@ APP_URL = "https://344ee55e-2b07-4834-a035-cf6e3d86f117-00-10iu0k7uswe2t.kirk.re
 USER_ADMIN_STATE = ".auth/niakofa-admin.json"
 USER_A_STATE = ".auth/niakofa-admin.json"
 USER_B_STATE = ".auth/niakofa-admin.json"
+VITE_MEDIA_STUDIO_V2 = "true"
 
 [nix]
 channel = "stable-25_05"
