@@ -174,7 +174,10 @@ export function useCaptureSession() {
         const ext = type.includes("mp4") ? "mp4" : "webm";
         resolve(new File([blob], `studio-${Date.now()}.${ext}`, { type: type.split(";")[0], lastModified: Date.now() }));
       };
-      recorder.onerror = () => { setError("Recording stopped unexpectedly. Your earlier clips are safe."); recorder.state !== "inactive" && recorder.stop(); };
+      recorder.onerror = () => {
+        setError("Recording stopped unexpectedly. Your earlier clips are safe.");
+        if (recorder.state !== "inactive") recorder.stop();
+      };
       startedAtRef.current = Date.now();
       recorder.start(250);
       setStatus("recording");

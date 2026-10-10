@@ -732,7 +732,7 @@ export function CommunityStoryRail({
         if (!cancelled) setExchangeListingsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [composerOpen]);
+  }, [composerOpen, studioV2]);
 
   const loadMediaUrl = useCallback(async (media: StoryMedia) => {
     if (mediaObjectUrlsRef.current[media.id]) return;

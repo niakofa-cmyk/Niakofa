@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { initialStudioState, studioReducer, type StudioState } from "../studio-machine";
 import {
-  CAMERA_CLIP_MAX_MS, MOMENT_TOTAL_MAX_MS, STUDIO_MAX_ITEMS, destinationAvailability, momentCutdownIds,
+  CAMERA_CLIP_MAX_MS, STUDIO_MAX_ITEMS, destinationAvailability, momentCutdownIds,
   needsFamilyOriginalOffer, remainingCaptureMs, totalVideoMs, type StudioItem,
 } from "../studio-policy";
 
