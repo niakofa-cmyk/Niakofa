@@ -26,6 +26,8 @@ export type StudioItem = {
   durationMs: number | null;
   source: "camera" | "gallery";
   coverTimeMs: number;
+  /** Set after a trim: the untouched capture. Family originals and "Reset trim" use it; publishing uses `file`. */
+  original?: { file: File; durationMs: number | null };
 };
 
 export type DestinationState = { ok: boolean; reason?: string; note?: string };
@@ -71,7 +73,7 @@ export function destinationAvailability(
     : { ok: true };
 
   const exchange: DestinationState = !context.hasExchangeListing
-    ? { ok: false, reason: "Open Studio from one of your Exchange listings to share a Spark there." }
+    ? { ok: false, reason: "You need an active Exchange listing to share a Spark." }
     : items.length !== 1 || videos.length !== 1 ? { ok: false, reason: "Exchange Sparks are a single video." }
     : (videos[0].durationMs ?? Infinity) > SPARK_VIDEO_MAX_MS ? { ok: false, reason: "Exchange Sparks are 3 minutes or shorter." }
     : !["video/mp4", "video/webm"].includes(videos[0].file.type) ? { ok: false, reason: "Choose an MP4 or WebM video." }
@@ -81,7 +83,7 @@ export function destinationAvailability(
   const family: DestinationState = !hasMedia
     ? { ok: false, reason: "Add a photo or video first." }
     : !context.hasFamilySpace ? { ok: false, reason: "Join or create a Family Space to keep originals privately." }
-    : items.some((item) => item.file.size > FAMILY_FILE_MAX_BYTES) ? { ok: false, reason: "Family Story items must be 20 MB or smaller." }
+    : items.some((item) => (item.original?.file ?? item.file).size > FAMILY_FILE_MAX_BYTES) ? { ok: false, reason: "Family Story items must be 20 MB or smaller." }
     : { ok: true };
 
   return { moment, exchange_spark: exchange, family_story: family };

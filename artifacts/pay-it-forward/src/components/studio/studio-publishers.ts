@@ -241,7 +241,7 @@ export async function saveStudioOriginalsToFamily(input: {
     familyId: input.familyId,
     archiveId: input.archiveId,
     caption: input.caption,
-    files: input.items.map((item) => item.file),
+    files: input.items.map((item) => item.original?.file ?? item.file),
     signal: input.signal,
     onProgress: (message) => input.onProgress(message, 50),
   });

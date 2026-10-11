@@ -1,8 +1,9 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Circle, Flashlight, ImagePlus, Loader2, Plus, ShieldCheck, SwitchCamera, Trash2, Type, Video, X } from "lucide-react";
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Circle, Flashlight, ImagePlus, Loader2, Plus, ShieldCheck, Scissors, SwitchCamera, Trash2, Type, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { initialStudioState, studioReducer } from "./studio-machine";
-import { formatClock, itemFromFile } from "./studio-media";
+import { formatClock, itemFromFile, trimmedItem, untrimmedItem } from "./studio-media";
+import { TrimPanel } from "./TrimPanel";
 import {
   CAMERA_CLIP_MAX_MS, MOMENT_TOTAL_MAX_MS, STUDIO_MAX_ITEMS, canAddItem, destinationAvailability, needsFamilyOriginalOffer,
   remainingCaptureMs, totalVideoMs, type StudioDestination, type StudioItem,
@@ -70,6 +71,8 @@ export function MediaStudio(props: MediaStudioProps) {
   const [captureKind, setCaptureKind] = useState<"video" | "photo">("video");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [trimming, setTrimming] = useState(false);
+  const stageVideoRef = useRef<HTMLVideoElement | null>(null);
   const [workingSetReady, setWorkingSetReady] = useState(false);
   const [selectedListingId, setSelectedListingId] = useState(() => props.exchangeListingId ? String(props.exchangeListingId) : "");
   const [familySpaces, setFamilySpaces] = useState<Array<{ id: number; name: string }>>([]);
@@ -78,12 +81,16 @@ export function MediaStudio(props: MediaStudioProps) {
   const publishIdRef = useRef(props.initialClientPublishId ?? newStudioPublishId());
   const publishSignatureRef = useRef("");
 
+  // The trim panel belongs to one item in the review step; any change of selection or step closes it.
+  useEffect(() => { setTrimming(false); }, [state.activeId, state.mode]);
+
   const active = state.items.find((item) => item.id === state.activeId) ?? state.items[state.items.length - 1] ?? null;
   const usedMs = totalVideoMs(state.items);
   const budgetMs = remainingCaptureMs(state.items);
   const availability = useMemo(() => destinationAvailability(state.items, {
-    hasExchangeListing: Boolean(selectedListingId || props.exchangeListingId), hasFamilySpace: Boolean(props.familySpaceId || familySpaces.length),
-  }), [state.items, selectedListingId, props.exchangeListingId, props.familySpaceId, familySpaces.length]);
+    // "Has a listing to choose from": the picker only appears once Exchange Spark is selected, so the choice itself must not gate the button.
+    hasExchangeListing: Boolean(selectedListingId || props.exchangeListingId || props.exchangeListings?.length), hasFamilySpace: Boolean(props.familySpaceId || familySpaces.length),
+  }), [state.items, selectedListingId, props.exchangeListingId, props.exchangeListings?.length, props.familySpaceId, familySpaces.length]);
   const offerFamily = needsFamilyOriginalOffer(state.items) && availability.family_story.ok;
 
   // Open: recover files straight into review, otherwise straight into the live camera.
@@ -198,6 +205,12 @@ export function MediaStudio(props: MediaStudioProps) {
       dispatch({ type: "fail", message: "Video responses need one or more video clips shared with your Community as a Moment." });
       return;
     }
+    const chosenListingId = Number(selectedListingId);
+    const hasChosenListing = Number.isSafeInteger(chosenListingId) && chosenListingId > 0;
+    if (state.destination === "exchange_spark" && !hasChosenListing) {
+      dispatch({ type: "fail", message: "Choose which Exchange listing this Spark belongs to." });
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
     dispatch({ type: "mode", mode: "publishing" });
@@ -207,8 +220,8 @@ export function MediaStudio(props: MediaStudioProps) {
       if (state.saveOriginalPrivately && state.destination === "moment" && props.familySpaceId) {
         await saveStudioOriginalsToFamily({ familyId: props.familySpaceId, archiveId: archiveIdRef.current, caption: state.caption, items: state.items, signal: controller.signal, onProgress });
       }
-      const listingId = Number(selectedListingId);
-      if (state.destination === "exchange_spark" && Number.isSafeInteger(listingId) && listingId > 0) {
+      const listingId = chosenListingId;
+      if (state.destination === "exchange_spark") {
         const status = await publishStudioItemAsExchangeSpark({
           scope, listingId, item: state.items[0], caption: state.caption, signal: controller.signal, onProgress,
           onDraftChange: (draft) => props.onExchangeDraftChange?.(draft),
@@ -305,15 +318,29 @@ export function MediaStudio(props: MediaStudioProps) {
             <div className="nk-studio__stage">
               {active ? (active.kind === "photo"
                 ? <img key={active.id} src={urlFor(active)} alt="Selected photo" />
-                : <video key={active.id} src={urlFor(active)} autoPlay loop playsInline muted controls={false} aria-label="Selected video" />)
+                : <video key={active.id} ref={stageVideoRef} src={urlFor(active)} autoPlay={!trimming} loop playsInline muted controls={false} aria-label="Selected video" />)
                 : <textarea className="nk-studio__textcard" value={state.caption} onChange={(e) => dispatch({ type: "caption", caption: e.target.value })} placeholder="Write something…" aria-label="Write your Moment" maxLength={2200} />}
             </div>
             <header className="nk-studio__top">
               <button type="button" className="nk-studio__icon" onClick={back} aria-label="Back to camera"><ArrowLeft className="h-5 w-5" /></button>
               <span className="nk-studio__hint">{state.items.length ? `${formatClock(usedMs)} of ${formatClock(MOMENT_TOTAL_MAX_MS)}` : "Text Moment"}</span>
-              {active ? <button type="button" className="nk-studio__icon" onClick={() => dispatch({ type: "remove", id: active.id })} aria-label="Delete this item"><Trash2 className="h-5 w-5" /></button> : <span className="w-11" />}
+              {active ? <div className="nk-studio__row">
+                {active.kind === "video" && active.durationMs && state.mode === "review" && <button type="button" className="nk-studio__icon" onClick={() => setTrimming((open) => !open)} aria-pressed={trimming} aria-label="Trim video"><Scissors className="h-5 w-5" /></button>}
+                <button type="button" className="nk-studio__icon" onClick={() => dispatch({ type: "remove", id: active.id })} aria-label="Delete this item"><Trash2 className="h-5 w-5" /></button>
+              </div> : <span className="w-11" />}
             </header>
             <div className="nk-studio__bottom">
+              {trimming && active && active.kind === "video" ? (
+                <TrimPanel
+                  key={active.id}
+                  item={active}
+                  onSeek={(ms) => { const video = stageVideoRef.current; if (video) { video.pause(); video.currentTime = ms / 1000; } }}
+                  onApply={(file, durationMs) => dispatch({ type: "replace", id: active.id, item: trimmedItem(active, file, durationMs) })}
+                  onReset={() => dispatch({ type: "replace", id: active.id, item: untrimmedItem(active) })}
+                  onClose={() => setTrimming(false)}
+                />
+              ) : (
+                <>
               {state.items.length > 0 && (
                 <div className="nk-studio__tray" role="listbox" aria-label="Your items">
                   {state.items.map((item, index) => (
@@ -333,6 +360,8 @@ export function MediaStudio(props: MediaStudioProps) {
               {state.items.length > 0 && <input className="nk-studio__caption" value={state.caption} onChange={(e) => dispatch({ type: "caption", caption: e.target.value })} placeholder="Add a caption…" aria-label="Caption" maxLength={2200} />}
               {state.error && state.mode === "review" && <p className="nk-studio__notice" role="alert">{state.error}</p>}
               <button type="button" className="nk-studio__primary" disabled={!state.items.length && !state.caption.trim()} onClick={() => dispatch({ type: "mode", mode: "publish" })}>Next <ChevronRight className="h-5 w-5" /></button>
+                </>
+              )}
             </div>
           </motion.div>
         )}
@@ -394,7 +423,7 @@ export function MediaStudio(props: MediaStudioProps) {
                     <span><ShieldCheck className="inline h-4 w-4" /> Also save the full originals as a private Family Story. Your Moment will use the earliest clips that fit {formatClock(MOMENT_TOTAL_MAX_MS)}.</span></label>
                 )}
                 {state.error && <p className="nk-studio__notice" role="alert">{state.error}</p>}
-                <button type="button" className="nk-studio__primary" onClick={() => void publish()} disabled={adding}>Share {DEST_LABEL[state.destination]}</button>
+                <button type="button" className="nk-studio__primary" onClick={() => void publish()} disabled={adding || (state.destination === "exchange_spark" && !(Number(selectedListingId) > 0))}>Share {DEST_LABEL[state.destination]}</button>
               </>
             )}
           </motion.div>

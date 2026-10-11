@@ -35,3 +35,15 @@ export const formatClock = (ms: number) => {
   const total = Math.max(0, Math.round(ms / 1000));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 };
+
+/** The item that replaces `source` after a trim. Keeps the first-ever capture so nothing is lost across repeated trims. */
+export function trimmedItem(source: StudioItem, file: File, durationMs: number | null): StudioItem {
+  return { ...source, id: newItemId(), file, durationMs, coverTimeMs: 0, original: source.original ?? { file: source.file, durationMs: source.durationMs } };
+}
+
+/** Undo every trim: back to the original capture, as a fresh item. */
+export function untrimmedItem(source: StudioItem): StudioItem {
+  if (!source.original) return source;
+  const { original, ...rest } = source;
+  return { ...rest, id: newItemId(), file: original.file, durationMs: original.durationMs, coverTimeMs: 0 };
+}

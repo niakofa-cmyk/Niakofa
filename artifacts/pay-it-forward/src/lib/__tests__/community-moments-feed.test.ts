@@ -13,6 +13,10 @@ const appRoot = path.resolve(__dirname, "../..");
 const apiRoot = path.resolve(appRoot, "../../api-server/src/routes");
 const momentsMigration = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsMigration.ts"), "utf8");
 const moments = fs.readFileSync(path.join(appRoot, "components/community/CommunityMomentsExperience.tsx"), "utf8");
+const momentResolver = fs.readFileSync(path.join(appRoot, "components/community/moment-media-resolver.ts"), "utf8");
+const momentSurface = fs.readFileSync(path.join(appRoot, "components/community/MomentVideoSurface.tsx"), "utf8");
+// Playback authorization now lives in the shared resolver (used by the visible card AND the next-card prefetch).
+const momentsPlayback = `${moments}\n${momentResolver}`;
 const momentsStyles = fs.readFileSync(path.join(appRoot, "components/community/community-moments-experience.css"), "utf8");
 const studio = fs.readFileSync(path.join(appRoot, "components/community/CommunityStoryRail.tsx"), "utf8");
 const studioPublish = fs.readFileSync(path.join(appRoot, "components/community/story-studio-publish.ts"), "utf8");
@@ -46,7 +50,8 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(communityPage, /communityMomentsAudience \? null : hubContextId \?\? defaultHubId/);
     assert.match(moments, /sparks\.findIndex\(\(spark\) => spark\.id === openSparkId\)/);
     assert.match(moments, /cardRefs\.current\.get\(index\)\?\.scrollIntoView/);
-    assert.match(moments, /autoPlay muted=\{videoMuted\} playsInline controls/);
+    assert.match(moments, /autoPlay muted=\{videoMuted\} playsInline preload="auto"/);
+    assert.match(momentSurface, /controls=\{false\}/);
     assert.match(momentsView, /fullBleed/);
     assert.match(momentsStyles, /\.nia-moments--fullbleed\s*\{[^}]*height:\s*100dvh/s);
   });
@@ -96,13 +101,18 @@ describe("authorized Community Moments browsing feed", () => {
 
   test("active media is authorized and only fetched for the current Spark", () => {
     assert.match(moments, /if \(!activeMedia \|\| !playbackAllowed\)/);
-    assert.match(moments, /playback-grant/);
-    assert.match(moments, /method: "POST"/);
-    assert.match(moments, /credentials: "same-origin"/);
-    assert.match(moments, /reference\.origin !== window\.location\.origin/);
-    assert.match(moments, /playback\.origin !== window\.location\.origin/);
+    assert.match(momentsPlayback, /playback-grant/);
+    assert.match(momentsPlayback, /method: "POST"/);
+    assert.match(momentsPlayback, /credentials: "same-origin"/);
+    assert.match(momentsPlayback, /reference\.origin !== window\.location\.origin/);
+    assert.match(momentResolver, /playback\.origin !== deps\.origin/);
+    assert.match(moments, /origin: window\.location\.origin/);
     assert.match(moments, /URL\.revokeObjectURL/);
-    assert.match(moments, /muted=\{videoMuted\} playsInline controls/);
+    assert.match(moments, /<MomentVideoSurface/);
+    assert.match(momentSurface, /controls=\{false\}/);
+    assert.match(momentSurface, /role="slider"/);
+    assert.match(momentSurface, /aria-label=\{`\$\{paused \? "Play" : "Pause"\}/);
+    assert.match(moments, /resolveMomentVideoUrl\(activeSpark\.id, activeMedia/);
     assert.match(moments, /Turn Spark sound on/);
     assert.match(moments, /<track kind="captions"/);
     assert.match(moments, /media\.alt_text/);
@@ -113,7 +123,7 @@ describe("authorized Community Moments browsing feed", () => {
     assert.match(moments, /activeSpark\?\.moment_video && activeMomentVideoState\?\.status === "ready"/);
     assert.match(moments, /moment-composition\/playback-grant/);
     assert.match(moments, /moment-composition\/play/);
-    assert.match(moments, /validateMomentCompositionPlaybackUrl\(grant\.playback_url/);
+    assert.match(momentResolver, /validateMomentCompositionPlaybackUrl\(grant\.playback_url/);
     assert.doesNotMatch(moments, /fetch\(playback\.pathname/);
     assert.match(moments, /spark\.moment_video && activeMomentVideoState\?\.status !== "ready"/);
     assert.match(moments, /!showReel && spark\.media\.length > 1/);

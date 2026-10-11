@@ -23,7 +23,9 @@ import { ReportModal } from "@/components/ReportModal";
 import { CommunityStoryRail } from "./CommunityStoryRail";
 import { CreatorInsightsPanel } from "./CreatorInsightsPanel";
 import { StoryShareSheet } from "./StoryShareSheet";
-import { validateMomentCompositionPlaybackUrl } from "./story-studio-publish";
+import { MomentVideoSurface } from "./MomentVideoSurface";
+import { resolveMomentVideoUrl } from "./moment-media-resolver";
+import { freshGrant, nextPreloadIndex, shouldWarmVideoBytes, type CachedGrant } from "./moment-player-core";
 import { StoryElementLayer, storyEffectFilter, type StoryElement } from "./StoryElementLayer";
 import { KeepForMyFamilyDialog } from "@/components/family/KeepForMyFamilyDialog";
 import { getWeeklyMomentChallenge } from "@/lib/community-moments-collection-client";
@@ -242,6 +244,7 @@ export function CommunityMomentsExperience({
   const fullScreenToggleRef = useRef<HTMLButtonElement | null>(null);
   const fullScreenReturnFocusRef = useRef<HTMLElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const grantCacheRef = useRef(new Map<string, CachedGrant>());
   const watchPlaybackRef = useRef<WatchPlaybackState | null>(null);
   const pendingWatchContributionsRef = useRef<CommunityStoryWatchContribution[]>([]);
   const sendingWatchContributionsRef = useRef(false);
@@ -722,49 +725,20 @@ export function CommunityMomentsExperience({
     setMediaError("");
     if (activeMedia.isMomentReel && activeMomentVideoState?.status !== "ready") return () => controller.abort();
     const resolveMedia = async () => {
-      const reference = new URL(activeMedia.media_url, window.location.origin);
-      if (activeMedia.isMomentReel) {
-        const expectedGrant = `/api/community/stories/${activeSpark?.id}/moment-composition/playback-grant`;
-        if (reference.origin !== window.location.origin || reference.pathname !== expectedGrant
-          || reference.search || reference.hash || reference.username || reference.password) {
-          throw new Error("This Spark does not have a valid camera reel playback grant.");
-        }
-        const grantResponse = await fetch(reference.pathname, {
-          method: "POST",
-          headers: authHeaders(),
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        const grant = await grantResponse.json().catch(() => ({})) as { playback_url?: string; error?: string };
-        if (!grantResponse.ok || typeof grant.playback_url !== "string") {
-          throw new Error(grant.error || "Secure camera reel playback could not be opened.");
-        }
-        return validateMomentCompositionPlaybackUrl(grant.playback_url, activeSpark.id, window.location.origin);
+      if (activeMedia.media_type === "video") {
+        // A grant prefetched while the previous card was playing makes the swipe instant.
+        const key = `${activeSpark?.id}-${activeMedia.id}`;
+        const warmed = freshGrant(grantCacheRef.current.get(key), Date.now());
+        grantCacheRef.current.delete(key);
+        if (warmed) return warmed;
+        return resolveMomentVideoUrl(activeSpark.id, activeMedia, { origin: window.location.origin, fetchFn: fetch, headers: authHeaders, signal: controller.signal });
       }
+      const reference = new URL(activeMedia.media_url, window.location.origin);
       const match = reference.pathname.match(/^\/api\/community\/stories\/media\/(\d+)\/?$/);
       const mediaId = Number(match?.[1]);
       if (reference.origin !== window.location.origin || reference.search || reference.hash
         || reference.username || reference.password || !Number.isSafeInteger(mediaId) || mediaId !== activeMedia.id) {
         throw new Error("This Spark does not have a valid authenticated media reference.");
-      }
-      if (activeMedia.media_type === "video") {
-        const response = await fetch(`${reference.pathname.replace(/\/$/, "")}/playback-grant`, {
-          method: "POST",
-          headers: authHeaders(),
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        const payload = await response.json().catch(() => ({})) as { playback_url?: string; error?: string };
-        if (!response.ok) throw new Error(payload.error || "Secure Spark playback could not be opened.");
-        if (typeof payload.playback_url !== "string" || !payload.playback_url) {
-          throw new Error("The playback service returned no video URL.");
-        }
-        const playback = new URL(payload.playback_url, window.location.origin);
-        if (playback.origin !== window.location.origin || playback.search || playback.hash
-          || playback.username || playback.password) {
-          throw new Error("The playback URL must remain on Niakofa and contain no URL token.");
-        }
-        return payload.playback_url;
       }
       const response = await fetch(reference.pathname, {
         headers: authHeaders(),
@@ -800,6 +774,46 @@ export function CommunityMomentsExperience({
       }
     };
   }, [activeMedia, activeMomentVideoState?.status, activeSpark?.id, flushCurrentWatchContribution, mediaRetry, playbackAllowed]);
+
+  // Warm the NEXT card: fetch its playback grant (and, on a good connection, its first bytes) while this one plays.
+  useEffect(() => {
+    if (!playbackAllowed || sparks.length === 0) return;
+    const primary = (spark: MomentSpark) => {
+      const state = momentVideoStates[spark.id];
+      if (spark.moment_video && (state?.status ?? spark.moment_video.status) === "ready") {
+        return { id: spark.id, media_url: state?.playbackGrantUrl ?? spark.moment_video.playback_grant_url, isMomentReel: true };
+      }
+      const first = spark.media[0];
+      return first?.media_type === "video" ? { id: first.id, media_url: first.media_url, isMomentReel: false } : null;
+    };
+    const targetIndex = nextPreloadIndex(sparks.map((spark) => ({ hasVideo: primary(spark) !== null, ready: true })), activeIndex);
+    if (targetIndex === null) return;
+    const spark = sparks[targetIndex];
+    const media = primary(spark);
+    if (!media) return;
+    const key = `${spark.id}-${media.id}`;
+    if (freshGrant(grantCacheRef.current.get(key), Date.now())) return;
+    const controller = new AbortController();
+    let warm: HTMLVideoElement | null = null;
+    void resolveMomentVideoUrl(spark.id, media, { origin: window.location.origin, fetchFn: fetch, headers: authHeaders, signal: controller.signal })
+      .then((url) => {
+        if (controller.signal.aborted) return;
+        const entry: CachedGrant = { url, at: Date.now() };
+        grantCacheRef.current.set(key, entry);
+        const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+        if (shouldWarmVideoBytes(connection)) {
+          warm = document.createElement("video");
+          warm.preload = "auto";
+          warm.muted = true;
+          warm.src = url;
+        }
+      })
+      .catch(reportClientSideEffectFailure("components.community-moments.prefetch-next"));
+    return () => {
+      controller.abort();
+      if (warm) { warm.removeAttribute("src"); warm.load(); }
+    };
+  }, [activeIndex, momentVideoStates, playbackAllowed, sparks]);
 
   useEffect(() => {
     const cues = activeMedia?.captions_vtt?.trim();
@@ -1306,11 +1320,13 @@ export function CommunityMomentsExperience({
                       </div>
                     )}
                     {current && playbackAllowed && currentMediaUrl && media?.media_type === "video" && (
-                      <video
+                      <MomentVideoSurface
                         ref={videoRef}
                         key={`${spark.id}-${media.id}`}
+                        surfaceLabel={`Spark ${index + 1} by ${spark.author.name || "a neighbor"}`}
+                        durationHintMs={media.duration_ms}
                         src={currentMediaUrl}
-                        autoPlay muted={videoMuted} playsInline controls preload="metadata"
+                        autoPlay muted={videoMuted} playsInline preload="auto"
                         className={`absolute inset-0 h-full w-full ${media.isMomentReel ? "object-cover" : "object-contain"}`}
                         data-moment-reel={media.isMomentReel ? "true" : undefined}
                         style={{ filter: mediaFilter }}
@@ -1347,7 +1363,7 @@ export function CommunityMomentsExperience({
                         }}
                       >
                         {captionsTrackUrl && <track kind="captions" src={captionsTrackUrl} srcLang="en" label="Creator captions" default />}
-                      </video>
+                      </MomentVideoSurface>
                     )}
                     {current && spark.moment_video && (
                       <span className="sr-only" id={`moment-reel-sources-${spark.id}`}>

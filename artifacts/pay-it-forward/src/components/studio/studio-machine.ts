@@ -25,6 +25,7 @@ export type StudioAction =
   | { type: "move"; id: string; to: number }
   | { type: "select"; id: string }
   | { type: "cover"; id: string; timeMs: number }
+  | { type: "replace"; id: string; item: StudioItem }
   | { type: "mode"; mode: StudioMode }
   | { type: "destination"; destination: StudioDestination }
   | { type: "caption"; caption: string }
@@ -78,6 +79,14 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
       return state.items.some((item) => item.id === action.id) ? { ...state, activeId: action.id } : state;
     case "cover":
       return { ...state, items: state.items.map((item) => (item.id === action.id ? { ...item, coverTimeMs: Math.max(0, action.timeMs) } : item)) };
+    case "replace": {
+      // Used by trim/reset: same slot, new identity (the object-URL cache is keyed by id).
+      const index = state.items.findIndex((item) => item.id === action.id);
+      if (index < 0) return state;
+      const items = [...state.items];
+      items[index] = action.item;
+      return { ...state, items, activeId: state.activeId === action.id ? action.item.id : state.activeId, error: "" };
+    }
     case "mode": {
       if (action.mode === "capture" && !canAddItem(state.items)) return { ...state, error: `Up to ${STUDIO_MAX_ITEMS} items per Moment.` };
       if ((action.mode === "review" || action.mode === "publish") && state.items.length === 0 && !state.caption.trim()) return state;
