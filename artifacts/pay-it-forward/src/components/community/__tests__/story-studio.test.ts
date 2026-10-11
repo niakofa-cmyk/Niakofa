@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CameraClipReelPendingError, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, reconcileCameraClipReelFingerprints, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
-import { buildMomentMediaAccessibility, parseMomentStudioTags, restoreMomentStudioAccessibility, validateMomentStudioWebVtt, type MomentStudioAccessibilityDraft } from "../moment-studio-accessibility";
+import { CameraClipReelPendingError, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, reconcileCameraClipReelFingerprints, requestCameraClipReel, selectedStudioFiles, selectedStudioIndexes, validateMomentCompositionPlaybackUrl, validStudioMediaEdits } from "../story-studio-publish";
+import { buildMomentMediaAccessibility, momentStudioAccessibilityForSelection, momentStudioAccessibilityFromItems, parseMomentStudioTags, restoreMomentStudioAccessibility, validateMomentStudioWebVtt, type MomentStudioAccessibilityDraft } from "../moment-studio-accessibility";
 import { trimVideoFile } from "../story-media-tools";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, isValidCameraReelAssetIds, loadStudioDraft, persistStudioDraft, persistStudioPublishAttempt, recoverStudioCameraReelAssetIds, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "../story-studio-draft";
 
@@ -269,6 +269,7 @@ test("video trimming rejects non-video files and empty or reversed ranges", asyn
 
 test("sequence is the selected order, not the gallery's file order", () => {
   assert.deepEqual(selectedStudioFiles([file("first"), file("second")], [1, 0, 1]).map((item) => item.name), ["second", "first"]);
+  assert.deepEqual(selectedStudioIndexes([file("first"), file("second")], [1, 0, 1, 9]), [1, 0]);
 });
 
 test("Moment tags and accessibility metadata are bounded and retain selected attachment order", () => {
@@ -292,6 +293,24 @@ test("Moment tags and accessibility metadata are bounded and retain selected att
   assert.deepEqual(restoreMomentStudioAccessibility({
     momentTagsInput: "community", momentAltTexts: { 0: "Description" }, momentCaptionsVtt: { 0: vtt },
   }), { momentTagsInput: "community", momentAltTexts: { 0: "Description" }, momentCaptionsVtt: { 0: vtt } });
+});
+
+test("v2 accessibility metadata survives draft save/restore and selected-media reordering", () => {
+  const recovered = momentStudioAccessibilityForSelection({
+    momentTagsInput: "community, art",
+    momentAltTexts: { 0: "First image", 2: "Third image" },
+    momentCaptionsVtt: { 0: "", 2: "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello" },
+  }, [2, 0]);
+  assert.deepEqual(recovered, {
+    momentTagsInput: "community, art",
+    momentAltTexts: { 0: "Third image", 1: "First image" },
+    momentCaptionsVtt: { 0: "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello", 1: "" },
+  });
+
+  assert.deepEqual(momentStudioAccessibilityFromItems([
+    { altText: "Third image", captionsVtt: "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello" },
+    { altText: "First image" },
+  ], recovered.momentTagsInput), recovered);
 });
 
 test("scope reset starts without prior user's or Hub's files, audience, listing or uploaded assets", () => {

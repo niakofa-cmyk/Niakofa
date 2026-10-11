@@ -12,8 +12,12 @@ export type StudioElement = {
   z_index?: number;
 };
 
+export function selectedStudioIndexes(files: File[], selection: number[]): number[] {
+  return [...new Set(selection)].filter((index) => Number.isInteger(index) && index >= 0 && index < files.length);
+}
+
 export function selectedStudioFiles(files: File[], selection: number[]): File[] {
-  return [...new Set(selection)].filter((index) => Number.isInteger(index) && index >= 0 && index < files.length).map((index) => files[index]);
+  return selectedStudioIndexes(files, selection).map((index) => files[index]);
 }
 
 export function chooseStudioFiles(files: File[]): { files: File[]; errors: string[] } {

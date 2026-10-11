@@ -23,6 +23,7 @@ import { useObjectUrls, useWebVttObjectUrl } from "./StoryComposerMedia";
 import {
   buildMomentMediaAccessibility,
   emptyMomentStudioAccessibility,
+  momentStudioAccessibilityForSelection,
   persistMomentStudioDraft,
   parseMomentStudioTags,
   restoreMomentStudioAccessibility,
@@ -31,7 +32,7 @@ import {
 } from "./moment-studio-accessibility";
 import { StoryEditorCanvas, type EditableStoryElement } from "./StoryEditorCanvas";
 import { discardStudioDraft, emptyStudioScope, exchangeResumeAction, isValidCameraReelAssetIds, loadStudioDraft, newStudioPublishId, persistStudioPublishAttempt, recoverStudioCameraReelAssetIds, saveStudioDraft, studioDraftKey, studioFileFingerprint, studioPublishSignature, type StudioDraft } from "./story-studio-draft";
-import { CameraClipReelPendingError, chooseStudioFiles, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, reconcileCameraClipReelFingerprints, requestCameraClipReel, selectedStudioFiles, validateMomentCompositionPlaybackUrl, validateStudioFiles } from "./story-studio-publish";
+import { CameraClipReelPendingError, chooseStudioFiles, getCameraClipReelStatus, isCameraClipReelSelection, publishStudioMoment, reconcileCameraClipReelFingerprints, requestCameraClipReel, selectedStudioFiles, selectedStudioIndexes, validateMomentCompositionPlaybackUrl, validateStudioFiles } from "./story-studio-publish";
 import { trackCommunityContent } from "@/lib/communityMediaAnalytics";
 import { getExchangeListings } from "@/lib/community-exchange-client";
 import type { ExchangeListing } from "@/lib/community-exchange-types";
@@ -1846,6 +1847,10 @@ export function CommunityStoryRail({
           scope={{ userId, hubId, audience }}
           initialFiles={selectedStudioFiles(files, gallerySelection)}
           initialCaption={caption}
+          initialMomentAccessibility={momentStudioAccessibilityForSelection(
+            momentAccessibility,
+            selectedStudioIndexes(files, gallerySelection),
+          )}
           exchangeListingId={exchangeListingId ? Number(exchangeListingId) : null}
           exchangeListings={ownedExchangeListings}
           initialClientPublishId={clientPublishIdRef.current}
@@ -1862,10 +1867,11 @@ export function CommunityStoryRail({
           responseToStoryId={responseTargetId}
           challengeKey={activeChallengeKey}
           onClose={closeComposer}
-          onWorkingSetChange={(items, nextCaption) => {
+          onWorkingSetChange={(items, nextCaption, accessibility) => {
             setFiles(items.map((item) => item.file));
             setGallerySelection(items.map((_, index) => index));
             setCaption(nextCaption);
+            setMomentAccessibility(accessibility);
           }}
           onPublished={(result) => {
             void (async () => {

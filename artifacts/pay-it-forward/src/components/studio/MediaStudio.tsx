@@ -6,7 +6,8 @@ import { formatClock, itemFromFile, trimmedItem, untrimmedItem } from "./studio-
 import { DescribePanel } from "./DescribePanel";
 import { TrimPanel } from "./TrimPanel";
 import { missingAltIds, momentAccessibilityIssues } from "./studio-accessibility";
-import { parseMomentStudioTags, validateMomentStudioWebVtt } from "../community/moment-studio-accessibility";
+import { momentStudioAccessibilityFromItems, parseMomentStudioTags, validateMomentStudioWebVtt } from "../community/moment-studio-accessibility";
+import type { MomentStudioAccessibilityDraft } from "../community/moment-studio-accessibility";
 import {
   CAMERA_CLIP_MAX_MS, MOMENT_TOTAL_MAX_MS, STUDIO_MAX_ITEMS, canAddItem, destinationAvailability, needsFamilyOriginalOffer,
   remainingCaptureMs, totalVideoMs, type StudioDestination, type StudioItem,
@@ -42,8 +43,9 @@ export type MediaStudioProps = {
   /** Files recovered from a saved draft; opens straight into review. */
   initialFiles?: File[];
   initialCaption?: string;
+  initialMomentAccessibility?: MomentStudioAccessibilityDraft;
   /** Called (debounced by the host) so the existing draft store can persist the working set. */
-  onWorkingSetChange?: (items: StudioItem[], caption: string) => void;
+  onWorkingSetChange?: (items: StudioItem[], caption: string, accessibility: MomentStudioAccessibilityDraft) => void;
 };
 
 function useObjectUrls(items: StudioItem[]) {
@@ -118,6 +120,8 @@ export function MediaStudio(props: MediaStudioProps) {
     archiveIdRef.current = `studio-${Date.now().toString(36)}`;
     setFamilySpacesError("");
     setFamilySpacesLoading(true);
+    const initialAccessibility = props.initialMomentAccessibility;
+    dispatch({ type: "tags", value: initialAccessibility?.momentTagsInput ?? "" });
     let active = true;
     void storiesClient.mine().then(({ families }) => {
       if (active) setFamilySpaces(families.filter((family) => family.status === "active"
@@ -130,6 +134,12 @@ export function MediaStudio(props: MediaStudioProps) {
       void Promise.all(files.map((file) => itemFromFile(file, "gallery"))).then((items) => {
         dispatch({ type: "add", items, goReview: true });
         if (props.initialCaption) dispatch({ type: "caption", caption: props.initialCaption });
+        items.forEach((item, index) => {
+          const altText = initialAccessibility?.momentAltTexts[index];
+          const captionsVtt = initialAccessibility?.momentCaptionsVtt[index];
+          if (altText) dispatch({ type: "alt", id: item.id, text: altText });
+          if (captionsVtt) dispatch({ type: "captions", id: item.id, vtt: captionsVtt });
+        });
         setWorkingSetReady(true);
       });
     } else {
@@ -145,6 +155,8 @@ export function MediaStudio(props: MediaStudioProps) {
     const signature = JSON.stringify({
       items: state.items.map((item) => studioFileFingerprint(item.file)),
       caption: state.caption.trim(),
+      tagsInput: state.tagsInput,
+      accessibility: state.items.map(({ altText, captionsVtt }) => [altText ?? "", captionsVtt ?? ""]),
       destination: state.destination,
       listingId: selectedListingId,
     });
@@ -153,7 +165,7 @@ export function MediaStudio(props: MediaStudioProps) {
       publishSignatureRef.current = signature;
       publishIdRef.current = newStudioPublishId();
     }
-  }, [workingSetReady, state.items, state.caption, state.destination, selectedListingId]);
+  }, [workingSetReady, state.items, state.caption, state.tagsInput, state.destination, selectedListingId]);
 
   // Camera follows the mode: warm-suspend in review, instant resume in capture.
   useEffect(() => {
@@ -164,8 +176,9 @@ export function MediaStudio(props: MediaStudioProps) {
   }, [state.mode, open]);
 
   useEffect(() => {
-    if (workingSetReady) props.onWorkingSetChange?.(state.items, state.caption);
-  }, [state.items, state.caption, workingSetReady]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!workingSetReady) return;
+    props.onWorkingSetChange?.(state.items, state.caption, momentStudioAccessibilityFromItems(state.items, state.tagsInput));
+  }, [state.items, state.caption, state.tagsInput, workingSetReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const back = useCallback(() => {
     if (state.mode === "publishing") { abortRef.current?.abort(); dispatch({ type: "fail", message: "Upload cancelled. Nothing was posted." }); return; }

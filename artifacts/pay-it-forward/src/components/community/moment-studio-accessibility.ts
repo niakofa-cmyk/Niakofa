@@ -23,6 +23,26 @@ export const emptyMomentStudioAccessibility = (): MomentStudioAccessibilityDraft
   momentCaptionsVtt: {},
 });
 
+export function momentStudioAccessibilityForSelection(value: unknown, selectedIndexes: number[]): MomentStudioAccessibilityDraft {
+  const draft = restoreMomentStudioAccessibility(value);
+  return {
+    momentTagsInput: draft.momentTagsInput,
+    momentAltTexts: Object.fromEntries(selectedIndexes.map((fileIndex, index) => [index, draft.momentAltTexts[fileIndex] ?? ""])),
+    momentCaptionsVtt: Object.fromEntries(selectedIndexes.map((fileIndex, index) => [index, draft.momentCaptionsVtt[fileIndex] ?? ""])),
+  };
+}
+
+export function momentStudioAccessibilityFromItems(
+  items: Array<{ altText?: string; captionsVtt?: string }>,
+  momentTagsInput: string,
+): MomentStudioAccessibilityDraft {
+  return {
+    momentTagsInput,
+    momentAltTexts: Object.fromEntries(items.map((item, index) => [index, item.altText ?? ""])),
+    momentCaptionsVtt: Object.fromEntries(items.map((item, index) => [index, item.captionsVtt ?? ""])),
+  };
+}
+
 export function restoreMomentStudioAccessibility(value: unknown): MomentStudioAccessibilityDraft {
   const draft = value && typeof value === "object" ? value as Partial<MomentStudioAccessibilityDraft> : {};
   return {
