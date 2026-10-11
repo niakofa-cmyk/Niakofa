@@ -14,6 +14,7 @@ export type StudioState = {
   activeId: string | null;
   destination: StudioDestination;
   caption: string;
+  tagsInput: string;
   saveOriginalPrivately: boolean;
   error: string;
   progress: { label: string; percent: number };
@@ -29,6 +30,9 @@ export type StudioAction =
   | { type: "mode"; mode: StudioMode }
   | { type: "destination"; destination: StudioDestination }
   | { type: "caption"; caption: string }
+  | { type: "alt"; id: string; text: string }
+  | { type: "captions"; id: string; vtt: string }
+  | { type: "tags"; value: string }
   | { type: "saveOriginal"; value: boolean }
   | { type: "progress"; label: string; percent: number }
   | { type: "fail"; message: string }
@@ -40,6 +44,7 @@ export const initialStudioState = (mode: StudioMode = "capture"): StudioState =>
   activeId: null,
   destination: "moment",
   caption: "",
+  tagsInput: "",
   saveOriginalPrivately: false,
   error: "",
   progress: { label: "", percent: 0 },
@@ -96,6 +101,12 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
       return { ...state, destination: action.destination, error: "" };
     case "caption":
       return { ...state, caption: action.caption.slice(0, 2200) };
+    case "alt":
+      return { ...state, items: state.items.map((item) => (item.id === action.id ? { ...item, altText: action.text.slice(0, 250) } : item)) };
+    case "captions":
+      return { ...state, items: state.items.map((item) => (item.id === action.id && item.kind === "video" ? { ...item, captionsVtt: action.vtt.slice(0, 65536) } : item)) };
+    case "tags":
+      return { ...state, tagsInput: action.value.slice(0, 320) };
     case "saveOriginal":
       return { ...state, saveOriginalPrivately: action.value };
     case "progress":

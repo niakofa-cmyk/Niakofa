@@ -1,9 +1,12 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Circle, Flashlight, ImagePlus, Loader2, Plus, ShieldCheck, Scissors, SwitchCamera, Trash2, Type, Video, X } from "lucide-react";
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Circle, Flashlight, ImagePlus, Loader2, Captions, Plus, ShieldCheck, Scissors, SwitchCamera, Trash2, Type, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { initialStudioState, studioReducer } from "./studio-machine";
 import { formatClock, itemFromFile, trimmedItem, untrimmedItem } from "./studio-media";
+import { DescribePanel } from "./DescribePanel";
 import { TrimPanel } from "./TrimPanel";
+import { missingAltIds, momentAccessibilityIssues } from "./studio-accessibility";
+import { parseMomentStudioTags, validateMomentStudioWebVtt } from "../community/moment-studio-accessibility";
 import {
   CAMERA_CLIP_MAX_MS, MOMENT_TOTAL_MAX_MS, STUDIO_MAX_ITEMS, canAddItem, destinationAvailability, needsFamilyOriginalOffer,
   remainingCaptureMs, totalVideoMs, type StudioDestination, type StudioItem,
@@ -72,6 +75,7 @@ export function MediaStudio(props: MediaStudioProps) {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [adding, setAdding] = useState(false);
   const [trimming, setTrimming] = useState(false);
+  const [describing, setDescribing] = useState(false);
   const stageVideoRef = useRef<HTMLVideoElement | null>(null);
   const [workingSetReady, setWorkingSetReady] = useState(false);
   const [selectedListingId, setSelectedListingId] = useState(() => props.exchangeListingId ? String(props.exchangeListingId) : "");
@@ -91,6 +95,16 @@ export function MediaStudio(props: MediaStudioProps) {
     // "Has a listing to choose from": the picker only appears once Exchange Spark is selected, so the choice itself must not gate the button.
     hasExchangeListing: Boolean(selectedListingId || props.exchangeListingId || props.exchangeListings?.length), hasFamilySpace: Boolean(props.familySpaceId || familySpaces.length),
   }), [state.items, selectedListingId, props.exchangeListingId, props.exchangeListings?.length, props.familySpaceId, familySpaces.length]);
+  const altRequired = state.destination === "moment" && state.items.length > 0;
+  const a11yIssues = useMemo(
+    () => (altRequired ? momentAccessibilityIssues(state.items, (vtt, ms) => validateMomentStudioWebVtt(vtt, ms)) : []),
+    [altRequired, state.items],
+  );
+  const missingAlt = useMemo(() => (altRequired ? missingAltIds(state.items) : new Set<string>()), [altRequired, state.items]);
+  const tagsProblem = useMemo(() => {
+    if (state.destination !== "moment" || !state.tagsInput.trim()) return "";
+    try { parseMomentStudioTags(state.tagsInput); return ""; } catch (reason) { return reason instanceof Error ? reason.message : "Check your tags."; }
+  }, [state.destination, state.tagsInput]);
   const offerFamily = needsFamilyOriginalOffer(state.items) && availability.family_story.ok;
 
   // Open: recover files straight into review, otherwise straight into the live camera.
@@ -211,6 +225,10 @@ export function MediaStudio(props: MediaStudioProps) {
       dispatch({ type: "fail", message: "Choose which Exchange listing this Spark belongs to." });
       return;
     }
+    if (state.destination === "moment" && (a11yIssues.length || tagsProblem)) {
+      dispatch({ type: "fail", message: a11yIssues[0]?.message ?? tagsProblem });
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
     dispatch({ type: "mode", mode: "publishing" });
@@ -233,7 +251,7 @@ export function MediaStudio(props: MediaStudioProps) {
       } else {
         const storyId = await publishStudioItemsAsMoment({
           scope, items: state.items, caption: state.caption, clientPublishId: publishIdRef.current,
-          responseToStoryId: props.responseToStoryId, challengeKey: props.challengeKey, signal: controller.signal, onProgress,
+          responseToStoryId: props.responseToStoryId, challengeKey: props.challengeKey, tagsInput: state.tagsInput, signal: controller.signal, onProgress,
         });
         onPublished({ kind: "moment", storyId });
       }
@@ -325,12 +343,25 @@ export function MediaStudio(props: MediaStudioProps) {
               <button type="button" className="nk-studio__icon" onClick={back} aria-label="Back to camera"><ArrowLeft className="h-5 w-5" /></button>
               <span className="nk-studio__hint">{state.items.length ? `${formatClock(usedMs)} of ${formatClock(MOMENT_TOTAL_MAX_MS)}` : "Text Moment"}</span>
               {active ? <div className="nk-studio__row">
-                {active.kind === "video" && active.durationMs && state.mode === "review" && <button type="button" className="nk-studio__icon" onClick={() => setTrimming((open) => !open)} aria-pressed={trimming} aria-label="Trim video"><Scissors className="h-5 w-5" /></button>}
+                {active.kind === "video" && active.durationMs && state.mode === "review" && <button type="button" className="nk-studio__icon" onClick={() => { setDescribing(false); setTrimming((open) => !open); }} aria-pressed={trimming} aria-label="Trim video"><Scissors className="h-5 w-5" /></button>}
+                {state.mode === "review" && <button type="button" className={`nk-studio__icon${altRequired && missingAlt.has(active.id) ? " has-flag" : ""}`} onClick={() => { setTrimming(false); setDescribing((open) => !open); }} aria-pressed={describing} aria-label={altRequired && missingAlt.has(active.id) ? "Add description (required)" : "Description and cover"}><Captions className="h-5 w-5" /></button>}
                 <button type="button" className="nk-studio__icon" onClick={() => dispatch({ type: "remove", id: active.id })} aria-label="Delete this item"><Trash2 className="h-5 w-5" /></button>
               </div> : <span className="w-11" />}
             </header>
             <div className="nk-studio__bottom">
-              {trimming && active && active.kind === "video" ? (
+              {describing && active ? (
+                <DescribePanel
+                  key={active.id}
+                  item={active}
+                  position={state.items.findIndex((item) => item.id === active.id) + 1}
+                  url={urlFor(active)}
+                  altRequired={altRequired}
+                  onAlt={(text) => dispatch({ type: "alt", id: active.id, text })}
+                  onCaptions={(vtt) => dispatch({ type: "captions", id: active.id, vtt })}
+                  onCover={(timeMs) => { dispatch({ type: "cover", id: active.id, timeMs }); const v = stageVideoRef.current; if (v) { v.pause(); v.currentTime = timeMs / 1000; } }}
+                  onClose={() => setDescribing(false)}
+                />
+              ) : trimming && active && active.kind === "video" ? (
                 <TrimPanel
                   key={active.id}
                   item={active}
@@ -347,6 +378,7 @@ export function MediaStudio(props: MediaStudioProps) {
                     <div key={item.id} className="nk-studio__thumbwrap">
                       <button type="button" role="option" aria-selected={item.id === active?.id} className={`nk-studio__thumb${item.id === active?.id ? " is-on" : ""}`} onClick={() => dispatch({ type: "select", id: item.id })} aria-label={`${item.kind} ${index + 1}${item.durationMs ? `, ${formatClock(item.durationMs)}` : ""}`}>
                         {item.kind === "photo" ? <img src={urlFor(item)} alt="" /> : <video src={urlFor(item)} muted playsInline preload="metadata" />}
+                        {missingAlt.has(item.id) && <i className="nk-studio__flag" aria-hidden="true" />}
                       </button>
                       {item.id === active?.id && state.items.length > 1 && <div className="nk-studio__reorder">
                         <button type="button" disabled={index === 0} onClick={() => dispatch({ type: "move", id: item.id, to: index - 1 })} aria-label="Move earlier"><ChevronLeft className="h-3.5 w-3.5" /></button>
@@ -422,8 +454,23 @@ export function MediaStudio(props: MediaStudioProps) {
                   <label className="nk-studio__offer"><input type="checkbox" checked={state.saveOriginalPrivately} onChange={(e) => dispatch({ type: "saveOriginal", value: e.target.checked })} />
                     <span><ShieldCheck className="inline h-4 w-4" /> Also save the full originals as a private Family Story. Your Moment will use the earliest clips that fit {formatClock(MOMENT_TOTAL_MAX_MS)}.</span></label>
                 )}
+                {state.destination === "moment" && state.items.length > 0 && (
+                  <label className="nk-studio__field">
+                    <span>Tags (optional)</span>
+                    <input value={state.tagsInput} onChange={(e) => dispatch({ type: "tags", value: e.target.value })} placeholder="food, neighbors, fort-worth" aria-invalid={Boolean(tagsProblem)} autoCapitalize="none" />
+                    {tagsProblem && <small role="alert" className="is-error">{tagsProblem}</small>}
+                  </label>
+                )}
+                {a11yIssues.length > 0 && state.destination === "moment" && (
+                  <div className="nk-studio__notice" role="alert">
+                    <p>{a11yIssues[0].message}</p>
+                    <button type="button" className="nk-studio__pill" onClick={() => { dispatch({ type: "select", id: a11yIssues[0].itemId }); dispatch({ type: "mode", mode: "review" }); setTrimming(false); setDescribing(true); }}>
+                      {a11yIssues.length > 1 ? `Fix now (${a11yIssues.length} to go)` : "Fix now"}
+                    </button>
+                  </div>
+                )}
                 {state.error && <p className="nk-studio__notice" role="alert">{state.error}</p>}
-                <button type="button" className="nk-studio__primary" onClick={() => void publish()} disabled={adding || (state.destination === "exchange_spark" && !(Number(selectedListingId) > 0))}>Share {DEST_LABEL[state.destination]}</button>
+                <button type="button" className="nk-studio__primary" onClick={() => void publish()} disabled={adding || (state.destination === "moment" && (a11yIssues.length > 0 || Boolean(tagsProblem))) || (state.destination === "exchange_spark" && !(Number(selectedListingId) > 0))}>Share {DEST_LABEL[state.destination]}</button>
               </>
             )}
           </motion.div>

@@ -26,6 +26,10 @@ export type StudioItem = {
   durationMs: number | null;
   source: "camera" | "gallery";
   coverTimeMs: number;
+  /** Required for Moments: what the photo or video shows. */
+  altText?: string;
+  /** Optional WebVTT captions (video only). Cleared by a trim, because cue times no longer line up. */
+  captionsVtt?: string;
   /** Set after a trim: the untouched capture. Family originals and "Reset trim" use it; publishing uses `file`. */
   original?: { file: File; durationMs: number | null };
 };

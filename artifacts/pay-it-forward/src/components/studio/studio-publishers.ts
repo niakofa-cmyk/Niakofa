@@ -26,7 +26,9 @@ import {
   studioPublishSignature,
   type StudioDraft,
 } from "../community/story-studio-draft";
+import { parseMomentStudioTags, validateMomentStudioWebVtt } from "../community/moment-studio-accessibility";
 import { publishStudioMoment } from "../community/story-studio-publish";
+import { accessibilityArrays, momentAccessibilityIssues } from "./studio-accessibility";
 import { itemKind, momentCutdownIds, needsFamilyOriginalOffer, type StudioItem } from "./studio-policy";
 
 export type StudioScope = { userId: number; hubId: number | null; audience: "community" | "hub" };
@@ -45,15 +47,22 @@ export async function publishStudioItemsAsMoment(input: {
   clientPublishId?: string;
   responseToStoryId?: number | null;
   challengeKey?: string | null;
+  /** Comma-separated Moment tags exactly as typed; validated before any upload starts. */
+  tagsInput?: string;
   signal: AbortSignal;
   onProgress: StudioProgress;
 }): Promise<number> {
   const { scope, signal } = input;
+  const tags = parseMomentStudioTags(input.tagsInput ?? "");
   const clientPublishId = input.clientPublishId ?? newStudioPublishId();
   const keep = new Set(momentCutdownIds(input.items));
   const momentItems = input.items.filter((item) => keep.has(item.id));
   const files = momentItems.map((item) => item.file);
   const selection = files.map((_, index) => index);
+  const { mediaAltTexts, mediaCaptionsVtt } = accessibilityArrays(momentItems);
+  // Fail here, before any bytes upload, if a required description is missing.
+  const issues = momentAccessibilityIssues(momentItems, (vtt, ms) => validateMomentStudioWebVtt(vtt, ms));
+  if (issues.length) throw new Error(issues[0].message);
   const coverTimes: Record<number, number> = {};
   momentItems.forEach((item, index) => { if (item.kind === "video" && item.coverTimeMs > 0) coverTimes[index] = item.coverTimeMs; });
   const attemptedSignature = studioPublishSignature({
@@ -97,10 +106,18 @@ export async function publishStudioItemsAsMoment(input: {
     cameraClipReel,
     responseToStoryId: input.responseToStoryId ?? null,
     challengeKey: input.challengeKey ?? null,
+    mediaAltTexts,
+    mediaCaptionsVtt,
+    ...(tags.length ? { tags } : {}),
     mediaEdits: momentItems.flatMap((item, index) => (item.kind === "video" && item.coverTimeMs > 0 ? [{ index, coverTimeMs: item.coverTimeMs }] : [])),
     onStatus: input.onProgress,
     // Mandatory durability barrier: ordered asset ids + publish identity hit IndexedDB before the POST.
-    beforePublish: async (orderedAssetIds) => { await persistStudioPublishAttempt(base, selection, orderedAssetIds); },
+    beforePublish: async (orderedAssetIds) => { await persistStudioPublishAttempt({
+      ...base,
+      momentTagsInput: input.tagsInput ?? "",
+      momentAltTexts: Object.fromEntries(mediaAltTexts.map((text, index) => [index, text])),
+      momentCaptionsVtt: Object.fromEntries(mediaCaptionsVtt.map((text, index) => [index, text])),
+    } as StudioDraft, selection, orderedAssetIds); },
   });
   await discardStudioDraft(scope.userId, scope.hubId);
   return storyId;
