@@ -6,6 +6,10 @@ import { getMediaToolPaths } from "./mediaCapabilities";
 
 export const MAX_MEDIA_BYTES = 64 * 1024 * 1024;
 
+export function normalizeMediaMimeType(mimeType: string): string {
+  return mimeType.split(";", 1)[0].trim().toLowerCase();
+}
+
 export function isAllowedMediaSize(size: number): boolean {
   return Number.isSafeInteger(size) && size > 0 && size <= MAX_MEDIA_BYTES;
 }
@@ -143,7 +147,7 @@ export async function validateMediaBuffer(
   mediaType: string,
   mimeType: string,
 ): Promise<{ width: number | null; height: number | null; duration_ms: number | null }> {
-  mimeType = mimeType.trim().toLowerCase();
+  mimeType = normalizeMediaMimeType(mimeType);
   const supported: Record<string, string[]> = {
     photo: ["image/jpeg", "image/png", "image/gif", "image/webp"],
     video: ["video/mp4", "video/webm"],

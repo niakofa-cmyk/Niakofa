@@ -25,7 +25,7 @@ import { enqueueMediaAssetProcessing } from "../lib/mediaProcessingQueue";
 import { mediaProcessingQueue } from "../lib/queue";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { isAllowedMediaSize, MAX_MEDIA_BYTES, validateMediaBuffer } from "../lib/media-validation";
+import { isAllowedMediaSize, MAX_MEDIA_BYTES, normalizeMediaMimeType, validateMediaBuffer } from "../lib/media-validation";
 import { logger } from "../lib/logger";
 import { issueExchangeSparkPlaybackGrant, verifyExchangeSparkPlaybackGrant } from "../lib/exchange-spark-playback";
 import {
@@ -317,7 +317,7 @@ const uploadRequestSchema = z.object({
   contextKind: z.enum(["story", "exchange_spark", "direct", "request", "hub", "community_moment", "hub_moment"]),
   contextId: z.number().int().positive(),
   mediaType: z.enum(["photo", "video", "audio", "document"]),
-  mimeType: z.string().trim().min(3).max(120),
+  mimeType: z.string().trim().max(120).transform(normalizeMediaMimeType).pipe(z.string().min(3).max(120)),
   originalName: z.string().trim().max(255).optional(),
   byteSize: z.number().int().refine(isAllowedMediaSize, `Must be between 1 and ${MAX_MEDIA_BYTES} bytes.`),
   musicRights: z.object({
@@ -612,7 +612,7 @@ router.put(
     if (!assetId || !Buffer.isBuffer(req.body)) return res.status(400).json({ error: "A raw media chunk is required." });
     const offset = Number(req.headers["upload-offset"]);
     const digest = String(req.headers["x-chunk-sha256"] ?? "").trim().toLowerCase();
-    const chunkMime = String(req.headers["x-media-mime-type"] ?? "").trim().toLowerCase();
+    const chunkMime = normalizeMediaMimeType(String(req.headers["x-media-mime-type"] ?? ""));
     if (!Number.isSafeInteger(offset) || offset < 0 || !/^[0-9a-f]{64}$/.test(digest)) {
       return res.status(400).json({ error: "A valid chunk offset and SHA-256 digest are required." });
     }
@@ -643,7 +643,7 @@ router.put(
           return { kind: "not-found" };
         }
         if (!isAllowedMediaSize(asset.byte_size) || asset.byte_size > MEDIA_UPLOAD_MAX_BYTES) return { kind: "too-large" };
-        if (chunkMime !== asset.mime_type.toLowerCase()) return { kind: "wrong-type" };
+        if (chunkMime !== normalizeMediaMimeType(asset.mime_type)) return { kind: "wrong-type" };
         const [session] = await tx.select().from(mediaUploadSessionsTable)
           .where(eq(mediaUploadSessionsTable.media_asset_id, assetId))
           .limit(1)

@@ -65,6 +65,14 @@ process.stderr.write("partial file\\n");
         duration_ms: 1250,
       });
 
+      const webm = Buffer.alloc(16);
+      Buffer.from([0x1a, 0x45, 0xdf, 0xa3]).copy(webm);
+      await expect(validateMediaBuffer(webm, "video", "video/webm;codecs=vp9,opus")).resolves.toEqual({
+        width: 1280,
+        height: 720,
+        duration_ms: 1250,
+      });
+
       const [probeInputPath, fileMode, directoryMode] = (await readFile(capturedInputPath, "utf8")).trim().split("\n");
       expect(probeInputPath).toContain("niakofa-media-probe-");
       expect(probeInputPath).not.toBe("pipe:0");
