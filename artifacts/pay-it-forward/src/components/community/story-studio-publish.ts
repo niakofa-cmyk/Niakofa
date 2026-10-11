@@ -1,5 +1,6 @@
 import { authHeaders } from "@/lib/auth";
 import { uploadCommunityMomentMedia, validateCommunityMomentFile } from "@/lib/community-moments-upload";
+import { readVideoDurationSeconds } from "@/lib/video-duration";
 import { buildMomentMediaAccessibility, type MomentMediaAccessibilityPayload } from "./moment-studio-accessibility";
 
 export type StudioElement = {
@@ -42,22 +43,9 @@ export async function validateStudioFiles(files: File[]): Promise<Array<number |
       videoDurationsMs.push(null);
       continue;
     }
-    const url = URL.createObjectURL(file);
-    const video = document.createElement("video");
-    try {
-      video.preload = "metadata";
-      video.src = url;
-      await new Promise<void>((resolve, reject) => {
-        video.onloadedmetadata = () => resolve();
-        video.onerror = () => reject(new Error(`${file.name}: Video could not be inspected.`));
-      });
-      if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error(`${file.name}: The video duration could not be read.`);
-      videoDurationsMs.push(Math.ceil(video.duration * 1000));
-    } finally {
-      video.removeAttribute("src");
-      video.load();
-      URL.revokeObjectURL(url);
-    }
+    const durationSeconds = await readVideoDurationSeconds(file);
+    if (durationSeconds === null) throw new Error(`${file.name}: The video duration could not be read.`);
+    videoDurationsMs.push(Math.ceil(durationSeconds * 1000));
   }
   return videoDurationsMs;
 }
