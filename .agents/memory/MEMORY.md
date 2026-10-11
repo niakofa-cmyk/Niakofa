@@ -99,3 +99,4 @@
 - [Node TSX harness stdin boundary](tsx-harness-stdin.md) — use a temporary `.mjs` harness with `node --import tsx`; stdin plus `--input-type=module` fails before execution.
 - [IndexedDB test fixtures](indexeddb-test-fixtures.md) — return the same transaction object that receives callbacks; cloned fakes can leave draft writes pending forever.
 - [Studio trim boundary policy](studio-trim-boundary-policy.md) — fast trims must shrink at keyframes and never retain footage outside the user-selected range.
+- [Media MIME parameter canonicalization](media-mime-parameters.md) — strip codec parameters before storage/type comparisons, while retaining byte-signature and metadata validation.
