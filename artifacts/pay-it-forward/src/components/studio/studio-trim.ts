@@ -65,8 +65,9 @@ export async function trimVideoFast(file: File, range: TrimRange, options: { sig
       output,
       trim: { start: range.startMs / 1000, end: range.endMs / 1000 },
       // Copy packets when the cut is (nearly) on a key frame; otherwise re-encode just enough to cut precisely.
+      // "shrink" never keeps media outside the chosen range, so a 60.0 s cut can never come back longer than the 60 s clip cap.
       video: { forceTranscode: false },
-      copy: { mode: "preferred", boundaryPolicy: "expand", boundaryTolerance: BOUNDARY_TOLERANCE_S },
+      copy: { mode: "preferred", boundaryPolicy: "shrink", boundaryTolerance: BOUNDARY_TOLERANCE_S },
     });
   } catch (reason) {
     input.dispose();

@@ -783,6 +783,8 @@ export function CommunityMomentsExperience({
       if (spark.moment_video && (state?.status ?? spark.moment_video.status) === "ready") {
         return { id: spark.id, media_url: state?.playbackGrantUrl ?? spark.moment_video.playback_grant_url, isMomentReel: true };
       }
+      // A camera reel that is still stitching shows a status card, not its source clips: nothing to warm.
+      if (spark.moment_video) return null;
       const first = spark.media[0];
       return first?.media_type === "video" ? { id: first.id, media_url: first.media_url, isMomentReel: false } : null;
     };
@@ -1579,7 +1581,7 @@ export function CommunityMomentsExperience({
           </>
         )}
       </section>
-      <p className="text-xs leading-relaxed text-muted-foreground">Only media for the Spark in view is opened. Videos start muted, and secure playback is authorized for your account.</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">Only the Spark in view plays; the next one is prepared in the background (not on Data Saver or slow connections). Videos start muted, and secure playback is authorized for your account.</p>
       </div>
       {shareSpark && (
         <StoryShareSheet

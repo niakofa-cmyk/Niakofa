@@ -63,3 +63,10 @@ test("Family size limit is judged on the ORIGINAL capture, not the trimmed copy"
   assert.equal(destinationAvailability([trimmed], ctx).family_story.ok, false);
   assert.equal(destinationAvailability([video({ file: file("video/webm", 2 * 1024 * 1024) })], ctx).family_story.ok, true);
 });
+
+test("fast trim never keeps media outside the chosen range (so a 60 s cut cannot exceed the 60 s clip cap)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../studio-trim.ts", import.meta.url), "utf8");
+  assert.match(source, /boundaryPolicy:\s*"shrink"/);
+  assert.doesNotMatch(source, /boundaryPolicy:\s*"expand"/);
+});
