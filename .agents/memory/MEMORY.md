@@ -98,3 +98,4 @@
 - [Workspace scanner long lines](workspace-scanner-long-lines.md) — a checkpoint `token too long` scan failure may come from tracked, ignored generated bundles as well as workspace secrets.
 - [Node TSX harness stdin boundary](tsx-harness-stdin.md) — use a temporary `.mjs` harness with `node --import tsx`; stdin plus `--input-type=module` fails before execution.
 - [IndexedDB test fixtures](indexeddb-test-fixtures.md) — return the same transaction object that receives callbacks; cloned fakes can leave draft writes pending forever.
+- [Studio trim boundary policy](studio-trim-boundary-policy.md) — fast trims must shrink at keyframes and never retain footage outside the user-selected range.
