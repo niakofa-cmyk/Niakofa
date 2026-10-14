@@ -1,12 +1,24 @@
 ---
 name: GitHub sync boundary
-description: Safe synchronization rule for the private Niakofa repository when GitHub write authorization is unavailable.
+description: Safe synchronization and managed GitHub authorization boundaries for Niakofa.
 ---
 
 Repository visibility and shell read access can change. A local commit is
 never evidence that GitHub `main` changed. When a supported managed
 credential or GitHub connection is unavailable, stop at the push boundary
 rather than using a token pasted into chat or force-pushing.
+
+Public repository visibility does not establish authenticated issue-write
+access. Replit's Git Providers authorization is separate from Connected
+Services; a connected chip or healthy OAuth inventory alone does not prove
+the workspace CLI can authenticate.
+
+**Why:** Official Replit documentation distinguishes the two connection paths,
+and the workspace can report a successful bind while `gh` has no usable session.
+
+**How to apply:** Verify authorization with the intended API or CLI operation.
+If directory, bind, and reconnect states remain contradictory, stop repeating
+the same setup calls and use the documented Git Providers recovery path.
 
 **Why:** An earlier shell pull failed authentication while the installed
 connection worked; a later unauthenticated read succeeded. Do not assume
