@@ -381,6 +381,11 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       await setArea(ownerPage);
       await setArea(buyerPage);
       await setArea(outsiderPage);
+      const savedBuyerArea = await buyerPage.evaluate(() => {
+        const saved = localStorage.getItem("niakofa_exchange_location");
+        return saved ? JSON.parse(saved) as { label?: string; source?: string } : null;
+      });
+      expect(savedBuyerArea).toMatchObject({ label: area, source: "area" });
 
       // Publish through the actual three-step Exchange form.
       await ownerPage.getByTestId("button-create-listing").click();
@@ -421,6 +426,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       // Separate mobile-width account discovers the real server listing after refresh.
       await buyerPage.reload();
       await openExchange(buyerPage);
+      await expect(buyerPage.getByRole("dialog", { name: "Set your local area" })).toBeHidden();
       await setArea(buyerPage);
       await expect(buyerPage.getByText(listingTitle, { exact: true })).toBeVisible();
       const mobileMetrics = await buyerPage.evaluate(() => ({
@@ -576,8 +582,75 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
         new Set([owner.id, buyer.id]),
       );
 
+      // Exercise browser location permission on the touch-enabled mobile account
+      // with a synthetic coordinate, then verify only a coarse label is saved
+      // in browser storage while the authenticated API receives the fix.
+      await buyerPage.context().grantPermissions(["geolocation"], { origin: baseURL });
+      await buyerPage.context().setGeolocation({
+        latitude: 32.7555,
+        longitude: -97.3308,
+        accuracy: 100,
+      });
+      await buyerPage.goto(`${baseURL}/community?tab=exchange`);
+      await expect(buyerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      await buyerPage.getByTestId("button-change-area").tap();
+      const buyerLocationDialog = buyerPage.getByRole("dialog", { name: "Set your local area" });
+      await expect(buyerLocationDialog).toBeVisible();
+      const locationSaveResponse = buyerPage.waitForResponse((response) =>
+        response.url().includes(`/api/users/${buyer.id}/location`)
+        && response.request().method() === "PATCH",
+      );
+      await buyerPage.getByTestId("button-use-browser-location").tap();
+      expect((await locationSaveResponse).status()).toBe(200);
+      await expect(buyerLocationDialog).toBeHidden();
+      const coarseBrowserLocation = await buyerPage.evaluate(() => {
+        const saved = localStorage.getItem("niakofa_exchange_location");
+        return saved ? JSON.parse(saved) as Record<string, unknown> : null;
+      });
+      expect(coarseBrowserLocation).toEqual({
+        label: "Nearby area",
+        city: "Nearby community",
+        source: "browser",
+      });
+      const buyerLocationRow = await pool.query(
+        "SELECT lat,lng,location_updated_at FROM users WHERE id=$1",
+        [buyer.id],
+      );
+      expect(Number(buyerLocationRow.rows[0].lat)).toBeCloseTo(32.7555, 4);
+      expect(Number(buyerLocationRow.rows[0].lng)).toBeCloseTo(-97.3308, 4);
+      expect(buyerLocationRow.rows[0].location_updated_at).not.toBeNull();
+      await buyerPage.reload();
+      await openExchange(buyerPage);
+      await expect(buyerPage.getByRole("dialog", { name: "Set your local area" })).toBeHidden();
+      await expect(buyerPage.getByTestId("button-change-area")).toContainText("Nearby area");
+
+      // Account C denies geolocation. The error must keep the manual fallback
+      // available and must not send a location mutation to the API.
+      await outsiderPage.context().grantPermissions([], { origin: baseURL });
+      await outsiderPage.goto(`${baseURL}/community?tab=exchange`);
+      await expect(outsiderPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      await outsiderPage.getByTestId("button-change-area").click();
+      const outsiderLocationDialog = outsiderPage.getByRole("dialog", { name: "Set your local area" });
+      await expect(outsiderLocationDialog).toBeVisible();
+      let deniedLocationWrites = 0;
+      outsiderPage.on("request", (request) => {
+        if (request.url().includes(`/api/users/${outsider.id}/location`)
+          && request.method() === "PATCH") deniedLocationWrites += 1;
+      });
+      await outsiderPage.getByTestId("button-use-browser-location").click();
+      await expect(outsiderPage.getByTestId("error-location")).toContainText(
+        "Location access was not granted. Nothing was shared",
+      );
+      await expect(outsiderPage.getByTestId("input-location-area")).toBeVisible();
+      expect(deniedLocationWrites).toBe(0);
+      const preservedManualArea = await outsiderPage.evaluate(() => {
+        const saved = localStorage.getItem("niakofa_exchange_location");
+        return saved ? JSON.parse(saved) as { label?: string; source?: string } : null;
+      });
+      expect(preservedManualArea).toMatchObject({ label: area, source: "area" });
+
       await testInfo.attach("exchange-local-lifecycle.txt", {
-        body: `listing=${listingId}; pickup=${pickupId}; lifecycle=completed; db=local; api=real; query-route=${queryRouteWorked}`,
+        body: `listing=${listingId}; pickup=${pickupId}; lifecycle=completed; location=manual-persisted+browser-granted+browser-denied; db=local; api=real; query-route=${queryRouteWorked}`,
         contentType: "text/plain",
       });
     } finally {
