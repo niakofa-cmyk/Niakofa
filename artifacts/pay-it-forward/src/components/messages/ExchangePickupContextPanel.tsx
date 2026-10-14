@@ -92,6 +92,17 @@ export function ExchangePickupContextPanel({ listingId, pickupRequestId, current
 
   useEffect(() => {
     void refresh();
+    const onRefresh = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    const interval = window.setInterval(onRefresh, 20000);
+    window.addEventListener("focus", onRefresh);
+    document.addEventListener("visibilitychange", onRefresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onRefresh);
+      document.removeEventListener("visibilitychange", onRefresh);
+    };
   }, [refresh]);
 
   const runAction = async (action: PickupAction) => {

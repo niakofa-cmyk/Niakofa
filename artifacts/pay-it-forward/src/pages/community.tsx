@@ -39,7 +39,9 @@ export default function CommunityScreen() {
   const [, setLocation] = useLocation();
   const search = useSearch();
   const [match, params] = useRoute("/community/:section");
-  const requestedSection = match && params?.section ? params.section : "home";
+  const requestedSection = match && params?.section
+    ? params.section
+    : new URLSearchParams(search).get("tab") ?? "home";
   const compatibleSection = normalizeCommunitySection(requestedSection);
   const normalizedSection: CommunityNavKey = COMMUNITY_SECTIONS.has(compatibleSection as CommunityNavKey)
     ? compatibleSection as CommunityNavKey

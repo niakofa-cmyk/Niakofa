@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { exchangeAccountsAreActive, lockExchangeAccounts } from "../lib/exchange-account-lifecycle";
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   db,
@@ -117,7 +118,7 @@ function exchangeMessagesActionUrl(recipientId: number, listingId: number, picku
   return `/messages?${params.toString()}`;
 }
 
-function notifyExchangeParticipant(input: {
+async function notifyExchangeParticipant(input: {
   recipientId: number;
   actorUserId: number;
   listingId: number;
@@ -126,13 +127,27 @@ function notifyExchangeParticipant(input: {
   body: string;
   action?: string;
 }): Promise<void> {
+  let peerId = input.actorUserId;
+  if (input.pickupRequestId) {
+    const [pair] = await db.select({
+      buyer_id: exchangePickupRequestsTable.buyer_id,
+      seller_id: exchangeListingsTable.seller_id,
+    }).from(exchangePickupRequestsTable)
+      .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id))
+      .where(and(eq(exchangePickupRequestsTable.id, input.pickupRequestId), eq(exchangeListingsTable.id, input.listingId)))
+      .limit(1);
+    if (!pair || ![pair.buyer_id, pair.seller_id].includes(input.recipientId)) {
+      throw new Error("Exchange notification recipient is not a participant.");
+    }
+    peerId = input.recipientId === pair.buyer_id ? pair.seller_id : pair.buyer_id;
+  }
   return createMessageNotification({
     userId: input.recipientId,
     actorUserId: input.actorUserId,
     type: "exchange",
     title: input.title,
     body: input.body,
-    actionUrl: exchangeMessagesActionUrl(input.recipientId, input.listingId, input.pickupRequestId),
+    actionUrl: exchangeMessagesActionUrl(peerId, input.listingId, input.pickupRequestId),
     metadata: {
       exchange_listing_id: input.listingId,
       ...(input.pickupRequestId ? { exchange_pickup_request_id: input.pickupRequestId } : {}),
@@ -559,7 +574,10 @@ router.post("/community/exchange/listings", requireAuth, requireApproved, commun
   }
   const moderation = moderatePostText(`${data.title}\n${data.description}\n${data.pickup_notes}`);
   const sellerLocation = await getExchangeMatchingLocation(req.authenticatedUserId!);
-  const [listing] = await db.insert(exchangeListingsTable).values({
+  const listing = await db.transaction(async (tx) => {
+    await lockExchangeAccounts(tx, [req.authenticatedUserId!]);
+    if (!await exchangeAccountsAreActive(tx, [req.authenticatedUserId!])) return null;
+    const [created] = await tx.insert(exchangeListingsTable).values({
     seller_id: req.authenticatedUserId!,
     listing_type: data.listing_type,
     resource_type: data.resource_type,
@@ -574,7 +592,10 @@ router.post("/community/exchange/listings", requireAuth, requireApproved, commun
     longitude: sellerLocation?.lng ?? null,
     moderation_status: moderation.status,
     moderation_reason: moderation.reason,
-  }).returning();
+    }).returning();
+    return created;
+  });
+  if (!listing) return res.status(403).json({ error: "This account is no longer available for Exchange." });
   return res.status(201).json({
     listing: serializeListing(listing as unknown as Record<string, unknown>),
     message: moderation.status === "approved"
@@ -673,6 +694,7 @@ router.post("/community/exchange/listings/:id/withdraw", requireAuth, requireApp
     .set({ status: "withdrawn", updated_at: new Date() })
     .where(and(eq(exchangeListingsTable.id, id), eq(exchangeListingsTable.status, "active")))
     .returning();
+  if (!updated) return res.status(409).json({ error: "This listing changed while you were withdrawing it. Refresh and try again." });
   return res.json({ listing: serializeListing(updated as unknown as Record<string, unknown>) });
 });
 
@@ -834,6 +856,8 @@ router.post("/community/exchange/listings/:id/pickup-requests", requireAuth, req
     // above is only a friendly fast path; two requests can still arrive
     // simultaneously and one must become a controlled 409, not a 500.
     const inserted = await db.transaction(async (tx) => {
+      await lockExchangeAccounts(tx, [userId, listing.seller_id]);
+      if (!await exchangeAccountsAreActive(tx, [userId, listing.seller_id])) return null;
       // A request and stale-listing archival must serialize on the listing.
       // Refreshing updated_at makes a waiting archival UPDATE ineligible even
       // if it started with a snapshot from before this request committed.

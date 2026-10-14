@@ -126,6 +126,17 @@ const corsOptions: cors.CorsOptions = {
   origin(origin, cb) {
     // Allow same-origin requests (no Origin header) and tools like curl
     if (!origin) return cb(null, true);
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        const url = new URL(origin);
+        if (["http:", "https:"].includes(url.protocol)
+          && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+          return cb(null, true);
+        }
+      } catch {
+        // Malformed/untrusted origins still pass through the configured policy.
+      }
+    }
     if (allowedOrigins.length === 0) {
       // Development-only fallback. Production fails fast above.
       return cb(null, true);

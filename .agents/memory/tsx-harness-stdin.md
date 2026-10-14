@@ -1,6 +1,6 @@
 ---
-name: Node TSX harness stdin boundary
-description: A workspace-specific limitation when launching temporary TypeScript-enabled ESM harnesses.
+name: Node TSX harness boundaries
+description: File-based execution and one shared loader graph for TypeScript-enabled ESM harnesses.
 ---
 
 In this workspace, launching `node --import tsx --input-type=module` with a
@@ -15,3 +15,14 @@ application modules.
 package directory with `node --import tsx /tmp/harness.mjs`, and resolve
 workspace packages from the package's `package.json` when the harness itself
 lives outside the workspace.
+
+Broad route harnesses should use one registered TSX loader with ordinary
+dynamic imports instead of separate namespaced `tsImport` module graphs.
+
+**Why:** Repeated namespaced imports around the account routes hung without
+database waits; moving the import order did not resolve it, while a shared
+registered loader did.
+
+**How to apply:** When a multi-router harness hangs during imports, use
+`register()` from `tsx/esm/api` once, then native imports so auth, routers and
+the database pool resolve in the same module graph.

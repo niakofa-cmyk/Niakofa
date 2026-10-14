@@ -146,6 +146,12 @@ export async function renewExchangeListing(id: number): Promise<{ listing: Excha
   });
 }
 
+export async function withdrawExchangeListing(id: number): Promise<{ listing: ExchangeListing }> {
+  return request<{ listing: ExchangeListing }>(`/api/community/exchange/listings/${id}/withdraw`, {
+    method: "POST",
+  });
+}
+
 export async function getExchangePickupRequests(): Promise<ExchangePickupRequestsResponse> {
   return request<ExchangePickupRequestsResponse>("/api/community/exchange/pickup-requests");
 }

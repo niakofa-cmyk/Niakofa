@@ -9,7 +9,13 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { resolve4 } from "node:dns/promises";
 import { createRequire } from "node:module";
-import { tsImport } from "tsx/esm/api";
+import { register } from "tsx/esm/api";
+
+// Use one loader/module graph for all routers and their shared database pool.
+// Separate tsImport namespaces can deadlock after importing account routes.
+register();
+// Prove core Exchange and account cleanup do not depend on a live Nia service.
+process.env.NIA_SERVICE_URL = "http://127.0.0.1:1";
 
 const requireFromApiServer = createRequire(new URL("../artifacts/api-server/package.json", import.meta.url));
 const requireFromDatabase = createRequire(new URL("../lib/db/package.json", import.meta.url));
@@ -56,17 +62,19 @@ try {
   await pool.query("SELECT 1 FROM exchange_pickup_disputes LIMIT 0");
   await pool.query("SELECT 1 FROM message_notifications LIMIT 0");
 
-  const { default: exchangeRouter } = await tsImport("../artifacts/api-server/src/routes/community-exchange.ts", import.meta.url);
-  const { default: reportsRouter } = await tsImport("../artifacts/api-server/src/routes/reports.ts", import.meta.url);
-  const { parseAuth, signTokenById } = await tsImport("../artifacts/api-server/src/middlewares/auth.ts", import.meta.url);
-  const { expireAbandonedExchangePickups } = await tsImport("../artifacts/api-server/src/lib/scheduler.ts", import.meta.url);
-  ({ pool: appPool } = await tsImport("@workspace/db", import.meta.url));
+  const { default: exchangeRouter } = await import("../artifacts/api-server/src/routes/community-exchange.ts");
+  const { default: reportsRouter } = await import("../artifacts/api-server/src/routes/reports.ts");
+  const { parseAuth, signTokenById } = await import("../artifacts/api-server/src/middlewares/auth.ts");
+  const { expireAbandonedExchangePickups } = await import("../artifacts/api-server/src/lib/scheduler.ts");
+  ({ pool: appPool } = await import("@workspace/db"));
+  const { default: usersRouter } = await import("../artifacts/api-server/src/routes/users.ts");
 
   const app = express();
   app.use(express.json());
   app.use(parseAuth);
   app.use("/api", exchangeRouter);
   app.use("/api", reportsRouter);
+  app.use("/api", usersRouter);
 
   const addUser = async (label, lat = 32.7555, lng = -97.3308, isAdmin = false) => {
     const result = await pool.query(`
@@ -91,6 +99,7 @@ try {
     post: (path) => request(app).post(`/api${path}`).set("Authorization", `Bearer ${user.token}`),
     patch: (path) => request(app).patch(`/api${path}`).set("Authorization", `Bearer ${user.token}`),
     get: (path) => request(app).get(`/api${path}`).set("Authorization", `Bearer ${user.token}`),
+    delete: (path) => request(app).delete(`/api${path}`).set("Authorization", `Bearer ${user.token}`),
   });
   const newListing = async (owner = seller, throughApi = false) => {
     let id;
@@ -206,6 +215,48 @@ try {
     `, [now, excludedPickupId]);
     return result.rows;
   };
+
+  // All mission-supported types use the real validation/discovery pipeline.
+  // Search-scoped pagination isolates this run from unrelated local fixtures.
+  const discoveryKey = `Review ${fixtureKey.slice(0, 8)}`;
+  const discoveryIds = [];
+  for (const [listing_type, resource_type] of [["offer", "goods"], ["need", "goods"], ["offer", "services"], ["need", "services"]]) {
+    const created = await api(seller).post("/community/exchange/listings").send({
+      seller_id: buyerB.id, // A submitted owner must never override authentication.
+      listing_type, resource_type, title: `${discoveryKey} ${listing_type} ${resource_type}`,
+      description: "A neighbor sharing or requesting useful community resources.",
+      category: "other", condition: "good", neighborhood: "Downtown",
+      pickup_location_type: "library",
+    });
+    expectStatus(created, 201, `create ${listing_type}/${resource_type}`);
+    fixtureListings.push(created.body.listing.id);
+    discoveryIds.push(created.body.listing.id);
+    assert.equal(created.body.listing.seller_id, seller.id);
+    const stored = await pool.query("SELECT listing_type,resource_type,seller_id FROM exchange_listings WHERE id=$1", [created.body.listing.id]);
+    assert.equal(stored.rows[0].listing_type, listing_type);
+    assert.equal(stored.rows[0].resource_type, resource_type);
+  }
+  const filtered = await api(buyerA).get(`/community/exchange/listings?type=need&resource_type=services&q=${encodeURIComponent(discoveryKey)}`);
+  expectStatus(filtered, 200, "discover service need from second account");
+  assert.deepEqual(filtered.body.listings.map((item) => item.id), [discoveryIds[3]]);
+  const seen = [];
+  let cursor = null;
+  do {
+    const page = await api(buyerA).get(`/community/exchange/listings?q=${encodeURIComponent(discoveryKey)}&limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+    expectStatus(page, 200, "discovery keyset page");
+    seen.push(...page.body.listings.map((item) => item.id));
+    cursor = page.body.next_cursor;
+    assert.ok(seen.length <= discoveryIds.length, "pagination must terminate without repeating rows");
+  } while (cursor);
+  assert.deepEqual([...seen].sort((a, b) => a - b), discoveryIds);
+  assert.equal(new Set(seen).size, seen.length);
+  expectStatus(await api(buyerB).patch(`/community/exchange/listings/${discoveryIds[3]}`).send({ title: "Unauthorized change" }), 404, "deny cross-account edit");
+  expectStatus(await api(seller).patch(`/community/exchange/listings/${discoveryIds[3]}`).send({ title: `${discoveryKey} revised service need` }), 200, "edit service need");
+  expectStatus(await api(seller).post(`/community/exchange/listings/${discoveryIds[3]}/withdraw`).send({}), 200, "withdraw service need");
+  expectStatus(await api(seller).post(`/community/exchange/listings/${discoveryIds[3]}/withdraw`).send({}), 409, "repeat withdrawal");
+  assert.equal((await listingState(discoveryIds[3])).status, "withdrawn");
+  await assertNotPublic(discoveryIds[3], buyerA, "withdrawn need");
+  expectStatus(await createPickup(discoveryIds[3], buyerA), 404, "unavailable need rejects coordination");
 
   // Public listing and request payloads must keep coordinates private, and
   // precise addresses/contact details must fail closed.
@@ -620,6 +671,16 @@ try {
     handoff_confirmation_recorded: 1,
     handoff_completed: 1,
   });
+  const completionLinks = await pool.query(`
+    SELECT user_id, action_url FROM message_notifications
+    WHERE metadata->>'exchange_listing_id'=$1 AND metadata->>'action'='handoff_completed'
+  `, [String(completionListing.id)]);
+  assert.equal(completionLinks.rows.length, 1);
+  for (const notification of completionLinks.rows) {
+    const link = new URL(notification.action_url, "https://example.invalid");
+    assert.equal(Number(link.searchParams.get("recipientId")), notification.user_id === seller.id ? buyerB.id : seller.id);
+    assert.equal(Number(link.searchParams.get("exchangePickupRequestId")), completionId);
+  }
   assert.deepEqual(notificationsBeforeRepeat, {
     request_created: 1,
     request_accepted: 1,
@@ -634,6 +695,46 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.deepEqual(await actionCounts(completionListing.id), notificationsBeforeRepeat);
   assert.equal((await listingState(completionListing.id)).status, "completed");
+
+  // Deletion cannot abandon a live handoff. Once coordination is cancelled,
+  // personal text is scrubbed while terminal history remains retained.
+  const deletingOwner = await addUser("deleting-owner");
+  const deletionListing = await newListing(deletingOwner, true);
+  const deletionPickup = await createPickup(deletionListing.id, buyerA);
+  expectStatus(deletionPickup, 201, "deletion fixture coordination");
+  const blockedDeletion = await api(deletingOwner).delete("/users/me");
+  expectStatus(blockedDeletion, 409, "live Exchange blocks account deletion");
+  assert.deepEqual(blockedDeletion.body.blocking_pickup_request_ids, [deletionPickup.body.pickup_request.id]);
+  assert.equal((await listingState(deletionListing.id)).status, "active", "blocked deletion must roll back anonymization");
+  expectStatus(await api(buyerA).post(`/community/exchange/pickup-requests/${deletionPickup.body.pickup_request.id}/cancel`), 200, "cancel before account deletion");
+  expectStatus(await api(deletingOwner).delete("/users/me"), 202, "delete inactive Exchange owner");
+  const retained = await pool.query(`
+    SELECT listing.status, listing.title, listing.latitude, listing.longitude, listing.pickup_notes,
+           pickup.status AS pickup_status, pickup.note, pickup.pickup_area, pickup.proposed_window
+    FROM exchange_listings listing JOIN exchange_pickup_requests pickup ON pickup.listing_id=listing.id
+    WHERE listing.id=$1
+  `, [deletionListing.id]);
+  assert.equal(retained.rows[0].status, "withdrawn");
+  assert.equal(retained.rows[0].title, "Listing from deleted account");
+  assert.equal(retained.rows[0].latitude, null);
+  assert.equal(retained.rows[0].longitude, null);
+  assert.equal(retained.rows[0].pickup_notes, null);
+  assert.equal(retained.rows[0].pickup_status, "cancelled");
+  assert.equal(retained.rows[0].pickup_area, "Removed area");
+  expectStatus(await api(deletingOwner).get("/community/exchange/listings?mine=true"), 401, "deleted token revoked");
+  await assertNotPublic(deletionListing.id, buyerB, "deleted owner's listing");
+
+  const racingOwner = await addUser("racing-delete-owner");
+  const racingListing = await newListing(racingOwner, true);
+  const [deletionRace, pickupRace] = await Promise.all([
+    api(racingOwner).delete("/users/me"),
+    createPickup(racingListing.id, buyerB),
+  ]);
+  assert.ok(
+    (deletionRace.status === 202 && [403, 404].includes(pickupRace.status))
+      || (deletionRace.status === 409 && pickupRace.status === 201),
+    `account deletion and new coordination must not both succeed: deletion=${deletionRace.status}, pickup=${pickupRace.status}`,
+  );
 
   console.log("Exchange lifecycle integration passed against the migrated database and actual API router.");
 } finally {

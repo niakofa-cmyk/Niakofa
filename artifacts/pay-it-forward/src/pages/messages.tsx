@@ -2,7 +2,7 @@ import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, ShieldAlert, UsersRound, X } from "lucide-react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { InAppChat } from "@/components/InAppChat";
@@ -158,7 +158,9 @@ function RequestThread({
 }
 
 export default function MessagesPage() {
-  const [location, navigate] = useLocation();
+  const [pathname, navigate] = useLocation();
+  const routeSearch = useSearch();
+  const location = routeSearch ? `${pathname}?${routeSearch}` : pathname;
   const { currentUser } = useAppContext();
   const activeMode = modeFromLocation(location);
   const [directConversations, setDirectConversations] = useState<DirectConversation[]>([]);

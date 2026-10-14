@@ -1,4 +1,5 @@
 import { Router, type Response } from "express";
+import { prepareExchangeAccountDeletion } from "../lib/exchange-account-lifecycle";
 import bcrypt from "bcryptjs";
 import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, helperAvailabilityTable, communitiesTable, diasporaHubPledgesTable, pushSubscriptionsTable, mediaAssetsTable, exchangeSparksTable, niaConversationsTable, niaMemoriesTable } from "@workspace/db";
 import { eq, and, or, sql, inArray } from "drizzle-orm";
@@ -1148,6 +1149,14 @@ async function anonymizeAccount(userId: number): Promise<AccountDeletionResult> 
   // Conditional status transition makes retries safe: only the first request
   // moves an active account into pending_purge and starts storage cleanup.
   await db.transaction(async (tx) => {
+    const blockingExchange = await prepareExchangeAccountDeletion(tx, userId, now);
+    if (blockingExchange.length) {
+      throw deletionError(
+        "ACCOUNT_DELETION_BLOCKED",
+        "Complete or cancel live Exchange coordination before deleting the account.",
+        { blocking_pickup_request_ids: blockingExchange },
+      );
+    }
     await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
     // Keep the owning Sparks and all MediaAsset rows until strict object
     // deletion succeeds. The hourly media cleanup worker retries tombstones;
@@ -1256,12 +1265,14 @@ function sendDeletionError(res: Response, error: unknown, logMessage: string) {
     message?: string;
     blocking_request_ids?: number[];
     blocking_pledge_ids?: number[];
+    blocking_pickup_request_ids?: number[];
   };
   if (typed.code === "ACCOUNT_DELETION_BLOCKED") {
     return res.status(409).json({
       error: typed.message,
       ...(typed.blocking_request_ids ? { blocking_request_ids: typed.blocking_request_ids } : {}),
       ...(typed.blocking_pledge_ids ? { blocking_pledge_ids: typed.blocking_pledge_ids } : {}),
+      ...(typed.blocking_pickup_request_ids ? { blocking_pickup_request_ids: typed.blocking_pickup_request_ids } : {}),
     });
   }
   if (typed.code === "USER_NOT_FOUND") return res.status(404).json({ error: "User not found" });

@@ -44,6 +44,14 @@ const mockDb: Record<string, jest.Mock> = {
   transaction: jest.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(mockDb)),
 };
 
+// These route tests isolate account auth/anonymization; the real Exchange
+// blocking, scrubbing and concurrency protocol runs against PostgreSQL in the
+// migration-backed Exchange lifecycle integration suite.
+const mockPrepareExchangeDeletion = jest.fn<() => Promise<number[]>>().mockResolvedValue([]);
+jest.unstable_mockModule("../lib/exchange-account-lifecycle.js", () => ({
+  prepareExchangeAccountDeletion: mockPrepareExchangeDeletion,
+}));
+
 jest.unstable_mockModule("@workspace/db", () => ({
   db: mockDb,
   exchangeSparksTable: { id: "id", author_user_id: "author_user_id", status: "status", draft_expires_at: "draft_expires_at" },

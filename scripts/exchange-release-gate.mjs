@@ -8,6 +8,7 @@ const steps = [
 ];
 
 if (process.env.DATABASE_URL) {
+  steps.push(["Disposable Exchange migration recovery", ["node", "--test", "lib/db/scripts/migration-recovery.test.mjs", "lib/db/scripts/exchange-migrations.integration.test.mjs"]]);
   steps.push(["Exchange spatial, lifecycle, and push integration", ["node", "scripts/exchange-spatial.integration.test.mjs"]]);
 } else {
   console.error("Exchange release gate requires DATABASE_URL for migration-backed spatial and handoff integration; refusing to certify without it.");
@@ -16,7 +17,7 @@ if (process.env.DATABASE_URL) {
 
 const run = (label, command, args) => new Promise((resolve) => {
   console.log(`\n== ${label} ==`);
-  const child = spawn(command, args, { stdio: "inherit", env: process.env });
+  const child = spawn(command, args, { stdio: "inherit", env: { ...process.env, DISPOSABLE_EXCHANGE_MIGRATION_TEST: "1" } });
   child.on("close", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
 });
 

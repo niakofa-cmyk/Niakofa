@@ -1,7 +1,7 @@
 import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
 
 import "./community-exchange-view.css";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -36,6 +36,7 @@ import {
   reportExchangeListing,
   renewExchangeListing,
   updateExchangeListing,
+  withdrawExchangeListing,
   type ExchangeReportType,
 } from "@/lib/community-exchange-client";
 import type {
@@ -276,6 +277,9 @@ export function CommunityExchangeView() {
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [requestsError, setRequestsError] = useState("");
   const [refreshTick, setRefreshTick] = useState(0);
+  const loadedDetailId = useRef<number | null>(null);
+  const feedGeneration = useRef(0);
+  const loadedFeedKey = useRef("");
   const [selectedId, setSelectedId] = useState<number | null>(() => {
     const value = Number(new URLSearchParams(window.location.search).get("listingId"));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
@@ -302,6 +306,7 @@ export function CommunityExchangeView() {
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState("");
+  const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
   const [impact, setImpact] = useState<ExchangeImpact | null>(null);
   const [postForm, setPostForm] = useState({
     listing_type: "offer" as ExchangeListingType,
@@ -339,10 +344,29 @@ export function CommunityExchangeView() {
   }, [location, locationOpen, postOpen, reportOpen, selectedId]);
 
   useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") setRefreshTick((tick) => tick + 1);
+    };
+    const timer = window.setInterval(refresh, 20000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!location) return;
     let cancelled = false;
-    setListings([]);
-    setNextCursor(null);
+    feedGeneration.current += 1;
+    const key = JSON.stringify([currentUser?.id, feedFilter, location, mineOnly, query]);
+    if (loadedFeedKey.current !== key) {
+      loadedFeedKey.current = key;
+      setListings([]);
+      setNextCursor(null);
+    }
     const timer = window.setTimeout(async () => {
       setListingsLoading(true);
       setListingsError("");
@@ -369,10 +393,11 @@ export function CommunityExchangeView() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [feedFilter, location, mineOnly, query, refreshTick]);
+  }, [currentUser?.id, feedFilter, location, mineOnly, query, refreshTick]);
 
   const loadMoreListings = async () => {
     if (!location || !nextCursor || listingsMoreLoading) return;
+    const generation = feedGeneration.current;
     setListingsMoreLoading(true);
     setListingsError("");
     try {
@@ -385,10 +410,14 @@ export function CommunityExchangeView() {
       if (feedFilter === "needs") filter.type = "need";
       if (query.trim()) filter.q = query;
       const result = await getExchangeListings(filter);
-      setListings((current) => [...current, ...(result.listings ?? [])]);
+      if (generation !== feedGeneration.current) return;
+      setListings((current) => {
+        const known = new Set(current.map((listing) => listing.id));
+        return [...current, ...(result.listings ?? []).filter((listing) => !known.has(listing.id))];
+      });
       setNextCursor(result.next_cursor ?? null);
     } catch (error) {
-      setListingsError(error instanceof Error ? error.message : "More listings could not be loaded.");
+      if (generation === feedGeneration.current) setListingsError(error instanceof Error ? error.message : "More listings could not be loaded.");
     } finally {
       setListingsMoreLoading(false);
     }
@@ -412,7 +441,7 @@ export function CommunityExchangeView() {
     return () => {
       cancelled = true;
     };
-  }, [location, refreshTick]);
+  }, [currentUser?.id, location, refreshTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -430,18 +459,24 @@ export function CommunityExchangeView() {
 
   useEffect(() => {
     if (selectedId === null) {
+      loadedDetailId.current = null;
       setSelectedListing(null);
       setDetailError("");
       return;
     }
     let cancelled = false;
-    setDetailLoading(true);
+    const initialize = loadedDetailId.current !== selectedId;
+    if (initialize) {
+      setSelectedListing(null);
+      setDetailLoading(true);
+    }
     setDetailError("");
     getExchangeListing(selectedId)
       .then((result) => {
         if (!cancelled) {
           setSelectedListing(result.listing);
-          setRequestForm({
+          loadedDetailId.current = selectedId;
+          if (initialize) setRequestForm({
             note: "",
             pickup_area: location?.label ?? result.listing.neighborhood,
             proposed_window: "",
@@ -451,7 +486,10 @@ export function CommunityExchangeView() {
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) setDetailError(error instanceof Error ? error.message : "This listing could not be opened.");
+        if (!cancelled) {
+          setSelectedListing(null);
+          setDetailError(error instanceof Error ? error.message : "This listing could not be opened.");
+        }
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -459,7 +497,7 @@ export function CommunityExchangeView() {
     return () => {
       cancelled = true;
     };
-  }, [location, selectedId]);
+  }, [currentUser?.id, location, refreshTick, selectedId]);
 
   useEffect(() => {
     if (!currentUser?.id || !location) return;
@@ -496,24 +534,29 @@ export function CommunityExchangeView() {
     setLocating(true);
     setLocationError("");
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        if (currentUser?.id) {
+      async (position) => {
+        try {
+          if (!currentUser?.id) throw new Error("Sign in before saving your location.");
           const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-          void fetch(`${base}/api/users/${currentUser.id}/location`, {
+          const response = await fetch(`${base}/api/users/${currentUser.id}/location`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json", ...authHeaders() },
             body: JSON.stringify({
               lat: position.coords.latitude,
               lng: position.coords.longitude,
             }),
-        }).catch(reportClientSideEffectFailure("components.community-exchange.location-preference"));
+          });
+          if (!response.ok) throw new Error("Location could not be saved. Try again or enter your area manually.");
+          const next: LocalLocation = { label: "Nearby area", city: "Nearby community", source: "browser" };
+          localStorage.setItem(LOCATION_KEY, JSON.stringify(next));
+          setLocation(next);
+          setLocationOpen(false);
+          setPostForm((current) => ({ ...current, neighborhood: next.label }));
+          setLocating(false);
+        } catch {
+          setLocating(false);
+          setLocationError("Location could not be saved. Try again or enter your area manually.");
         }
-        const next: LocalLocation = { label: "Nearby area", city: "Nearby community", source: "browser" };
-        localStorage.setItem(LOCATION_KEY, JSON.stringify(next));
-        setLocation(next);
-        setLocationOpen(false);
-        setPostForm((current) => ({ ...current, neighborhood: next.label }));
-        setLocating(false);
       },
       () => {
         setLocating(false);
@@ -598,6 +641,21 @@ export function CommunityExchangeView() {
       setRefreshTick((tick) => tick + 1);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "This post could not be renewed.");
+    }
+  };
+
+  const withdrawListing = async (listing: ExchangeListing) => {
+    if (!window.confirm("Withdraw this listing? It will no longer be discoverable. Coordination history is retained, and a withdrawn listing cannot be renewed.")) return;
+    setWithdrawSubmitting(true);
+    try {
+      await withdrawExchangeListing(listing.id);
+      setSelectedId(null);
+      setNotice("Your listing was withdrawn and is no longer discoverable.");
+      setRefreshTick((tick) => tick + 1);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "The listing could not be withdrawn.");
+    } finally {
+      setWithdrawSubmitting(false);
     }
   };
 
@@ -846,6 +904,12 @@ export function CommunityExchangeView() {
 
       {selectedId !== null && (
        <ModalFrame title={selectedListing?.title || "Listing details"} eyebrow="Community post" onClose={() => setSelectedId(null)} wide>
+           {selectedListing?.seller_id === currentUser?.id && selectedListing?.status === "active" && <button
+             type="button" disabled={withdrawSubmitting}
+             onClick={() => void withdrawListing(selectedListing)}
+             className="mb-4 inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-sm font-bold text-muted-foreground hover:text-destructive disabled:opacity-60"
+             data-testid="button-withdraw-listing"
+           >{withdrawSubmitting ? "Withdrawing…" : "Withdraw listing"}</button>}
            {selectedListing && selectedListing.seller_id === currentUser?.id && selectedListing.status === "active" && !requestsLoading && !pickupRequests.some((request) => request.listing_id === selectedListing.id && request.status === "accepted") && <button type="button" onClick={() => {
              setEditError("");
              setEditForm({
