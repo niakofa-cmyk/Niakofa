@@ -25,6 +25,12 @@ An existing TCP proxy only proves network forwarding; it does not establish a re
 
 **How to apply:** For account or content audits, require an operator-provided read-only snapshot, replica, or query output. If none is available, report the filtered request-log evidence as inconclusive and do not infer row state.
 
+An audit-labeled read-only database role may still lack permission to inspect migration ledgers, even when it can inspect application catalogs. In this environment the read-only role could not select `public._migrations_applied` and could not access the `drizzle` schema.
+
+**Why:** Read-only access limits writes but does not imply broad SELECT grants; treating a permission error as an empty ledger would produce a false migration diagnosis.
+
+**How to apply:** Treat ledger rows as unavailable when the query role is denied. Obtain the exact read-only query output from an authorized session on the confirmed application database; do not probe with a higher-privilege credential or infer absence from access denial.
+
 ## PostGIS maintenance
 
 When Niakofa is backed by separate Railway PostgreSQL services, verify which
