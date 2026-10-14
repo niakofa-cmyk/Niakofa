@@ -36,7 +36,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
     requireLocalTarget();
     test.setTimeout(90_000);
     const pool = new Pool({ connectionString: databaseURL, max: 2 });
-    const runId = randomUUID();
+    const runId = randomUUID().replace(/[0-9]/g, (digit) => String.fromCharCode(103 + Number(digit)));
     const area = `Exchange focus ${runId.slice(0, 8)}`;
     const title = `Focused pickup ${runId}`;
     const fixtureUsers: number[] = [];
@@ -279,7 +279,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
     requireLocalTarget();
     test.setTimeout(120_000);
     const pool = new Pool({ connectionString: databaseURL, max: 3 });
-    const runId = randomUUID();
+    const runId = randomUUID().replace(/[0-9]/g, (digit) => String.fromCharCode(103 + Number(digit)));
     const area = `Exchange E2E ${runId.slice(0, 8)}`;
     const listingTitle = `E2E shared table ${runId}`;
     const fixtureUsers: number[] = [];
@@ -335,8 +335,15 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
         user.token = signed.find((entry) => entry.id === user.id)?.token;
         if (!user.token) throw new Error("Local auth signer did not return a fixture token.");
       }
-      const makePage = async (user: FixtureUser, viewport = { width: 1280, height: 900 }) => {
-        const context = await browser.newContext({ viewport });
+      const makePage = async (
+        user: FixtureUser,
+        viewport = { width: 1280, height: 900 },
+        mobile = false,
+      ) => {
+        const context = await browser.newContext({
+          viewport,
+          ...(mobile ? { isMobile: true, hasTouch: true, deviceScaleFactor: 3 } : {}),
+        });
         contexts.push(context);
         await context.addInitScript(({ token, id, name, email }) => {
           localStorage.setItem("niakofa_token", token);
@@ -347,16 +354,13 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
         return context.newPage();
       };
       const ownerPage = await makePage(owner);
-      const buyerPage = await makePage(buyer, { width: 390, height: 844 });
+      const buyerPage = await makePage(buyer, { width: 390, height: 844 }, true);
       const outsiderPage = await makePage(outsider);
 
       const openExchange = async (page: Page) => {
         await page.goto(`${baseURL}/community?tab=exchange`);
-        const exchange = page.getByRole("region", { name: "Niakofa Exchange" });
-        const queryRoute = await exchange.isVisible().catch(() => false);
-        if (!queryRoute) await page.goto(`${baseURL}/community/exchange`);
-        await expect(page.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
-        return queryRoute;
+        await expect(page.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible({ timeout: 10_000 });
+        return true;
       };
       queryRouteWorked = await openExchange(ownerPage);
       await openExchange(buyerPage);
@@ -419,9 +423,16 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       await openExchange(buyerPage);
       await setArea(buyerPage);
       await expect(buyerPage.getByText(listingTitle, { exact: true })).toBeVisible();
-      expect(await buyerPage.evaluate(() => document.documentElement.clientWidth)).toBe(390);
+      const mobileMetrics = await buyerPage.evaluate(() => ({
+        width: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        maxTouchPoints: navigator.maxTouchPoints,
+      }));
+      expect(mobileMetrics.width).toBe(390);
+      expect(mobileMetrics.scrollWidth).toBeLessThanOrEqual(mobileMetrics.width);
+      expect(mobileMetrics.maxTouchPoints).toBeGreaterThan(0);
       await expect(buyerPage.getByTestId("input-search-listings")).toHaveAttribute("type", "search");
-      await buyerPage.getByText(listingTitle, { exact: true }).click();
+      await buyerPage.getByText(listingTitle, { exact: true }).tap();
       await expect(buyerPage.getByRole("dialog")).toBeVisible();
       await expect(buyerPage.getByTestId("input-pickup-area")).toBeVisible();
       await expect(buyerPage.getByTestId("input-pickup-window")).toBeVisible();
@@ -436,7 +447,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       );
       await expect(buyerPage.getByTestId("input-pickup-area")).toHaveValue(`${area} public library`);
       await expect(buyerPage.getByTestId("input-pickup-window")).toHaveValue("Saturday afternoon");
-      await buyerPage.getByTestId("button-send-pickup-request").click();
+      await buyerPage.getByTestId("button-send-pickup-request").tap();
       await expect(buyerPage.getByTestId("status-exchange-notice")).toBeVisible();
 
       const pickupRows = await pool.query(
