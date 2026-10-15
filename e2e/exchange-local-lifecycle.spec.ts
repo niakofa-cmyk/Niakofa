@@ -381,6 +381,20 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       await setArea(ownerPage);
       await setArea(buyerPage);
       await setArea(outsiderPage);
+
+      // Verify both supported Exchange entry routes render the same screen,
+      // and the Spark CTA lands in the Moments composer with its open flag.
+      const directExchangeResponse = await ownerPage.goto(`${baseURL}/community/exchange`);
+      expect(directExchangeResponse?.status()).toBe(200);
+      await expect(ownerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      const createSparkLink = ownerPage.getByTestId("button-create-exchange-spark-studio");
+      await expect(createSparkLink).toHaveAttribute("href", "/community/moments?composer=1");
+      await createSparkLink.click();
+      await ownerPage.waitForURL(/\/community\/moments\?composer=1$/);
+      await ownerPage.goto(`${baseURL}/community/exchange`);
+      await expect(ownerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      await setArea(ownerPage);
+
       const savedBuyerArea = await buyerPage.evaluate(() => {
         const saved = localStorage.getItem("niakofa_exchange_location");
         return saved ? JSON.parse(saved) as { label?: string; source?: string } : null;
