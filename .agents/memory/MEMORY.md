@@ -1,4 +1,5 @@
 - [Exchange spatial fallback](exchange-spatial-fallback.md) — PostGIS and plain PostgreSQL must share schema parity while using distinct spatial-index names.
+- [Exchange lifecycle test throttling](exchange-lifecycle-rate-limits.md) — keep real per-user listing limits in route integration tests; use distinct fixture owners and preserve ownership for follow-up edits.
 - [Auth fixture contract](niakofa-auth-fixture-contract.md) — model token-version lookups and concurrent auth rows explicitly in native ESM route tests.
 - [CI package working directories](ci-working-directory.md) — API source-contract Jest tests must run from their package directory; root invocation can create false path failures.
 - [Deployed browser runner boundary](deployed-browser-runner-boundary.md) — use repository Playwright/system Chromium; admin state stays local in git-ignored `.auth/niakofa-admin.json`.
