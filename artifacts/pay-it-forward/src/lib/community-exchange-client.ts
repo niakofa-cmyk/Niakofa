@@ -122,6 +122,7 @@ export interface CreateListingInput {
   neighborhood: string;
   pickup_location_type: ExchangePickupLocationType;
   pickup_notes?: string;
+  media_asset_ids?: number[];
 }
 
 export async function createExchangeListing(data: CreateListingInput): Promise<{ listing: ExchangeListing; message: string }> {

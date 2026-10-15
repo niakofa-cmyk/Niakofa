@@ -28,6 +28,15 @@ import {
   X,
 } from "lucide-react";
 import {
+  ExchangeListingMediaEditor,
+  ExchangeListingMediaGallery,
+  ExchangeListingMediaPreview,
+} from "./ExchangeListingMedia";
+import {
+  deleteExchangeListingDraftMedia,
+  uploadExchangeListingMediaFile,
+} from "@/lib/exchange-listing-media-client";
+import {
   createExchangeListing,
   createExchangePickupRequest,
   getExchangeListing,
@@ -225,6 +234,7 @@ function ListingCard({ listing, onOpen, onRenew, onEdit }: {
   return (
     <div className="group flex min-h-48 flex-col rounded-2xl border border-border bg-card p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-card/80" data-testid={`card-listing-${listing.id}`}>
       <button type="button" onClick={onOpen} className="flex min-h-36 flex-1 flex-col text-left focus:outline-none focus:ring-2 focus:ring-primary">
+        {listing.media?.[0] && <ExchangeListingMediaPreview item={listing.media[0]} />}
         <div className="flex items-center justify-between gap-2">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${isNeed ? "bg-amber-400/15 text-amber-200" : "bg-primary/15 text-primary"}`}>
             {isNeed ? <HeartHandshake className="h-3.5 w-3.5" aria-hidden="true" /> : <HandHeart className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -251,6 +261,35 @@ function ListingCard({ listing, onOpen, onRenew, onEdit }: {
       )}
     </div>
   );
+}
+
+type StagedListingFile = { file: File; mediaAssetId: number };
+
+async function ensureStagedListingFiles(
+  files: File[],
+  staged: StagedListingFile[],
+  ownerId: number,
+  signal: AbortSignal,
+  onProgress: (message: string) => void,
+  onStaged: (value: StagedListingFile[]) => void,
+): Promise<StagedListingFile[]> {
+  const result: StagedListingFile[] = [];
+  for (const [index, file] of files.entries()) {
+    const existing = staged.find((item) => item.file === file);
+    if (existing) {
+      result.push(existing);
+      continue;
+    }
+    const mediaAssetId = await uploadExchangeListingMediaFile({
+      ownerId,
+      file,
+      signal,
+      onProgress: (percent) => onProgress(`Uploading ${file.name} (${percent}%) — ${index + 1} of ${files.length}`),
+    });
+    result.push({ file, mediaAssetId });
+    onStaged([...result]);
+  }
+  return result;
 }
 
 export function CommunityExchangeView() {
@@ -291,6 +330,9 @@ export function CommunityExchangeView() {
   const [postStep, setPostStep] = useState(1);
   const [postSubmitting, setPostSubmitting] = useState(false);
   const [postError, setPostError] = useState("");
+  const [postMediaFiles, setPostMediaFiles] = useState<File[]>([]);
+  const [postStagedMedia, setPostStagedMedia] = useState<StagedListingFile[]>([]);
+  const [postMediaProgress, setPostMediaProgress] = useState("");
   const [notice, setNotice] = useState("");
   const [requestForm, setRequestForm] = useState({
     note: "",
@@ -306,6 +348,10 @@ export function CommunityExchangeView() {
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState("");
+  const [editMediaIds, setEditMediaIds] = useState<number[]>([]);
+  const [editMediaFiles, setEditMediaFiles] = useState<File[]>([]);
+  const [editStagedMedia, setEditStagedMedia] = useState<StagedListingFile[]>([]);
+  const [editMediaProgress, setEditMediaProgress] = useState("");
   const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
   const [impact, setImpact] = useState<ExchangeImpact | null>(null);
   const [postForm, setPostForm] = useState({
@@ -330,6 +376,59 @@ export function CommunityExchangeView() {
     pickup_location_type: "public_place" as ExchangePickupLocationType,
     pickup_notes: "",
   });
+
+  const updatePostMediaFiles = (files: File[]) => {
+    const removed = postStagedMedia.filter((item) => !files.includes(item.file));
+    setPostStagedMedia((current) => current.filter((item) => files.includes(item.file)));
+    setPostMediaFiles(files);
+    void Promise.allSettled(removed.map((item) => deleteExchangeListingDraftMedia(item.mediaAssetId)));
+  };
+
+  const updateEditMediaFiles = (files: File[]) => {
+    const removed = editStagedMedia.filter((item) => !files.includes(item.file));
+    setEditStagedMedia((current) => current.filter((item) => files.includes(item.file)));
+    setEditMediaFiles(files);
+    void Promise.allSettled(removed.map((item) => deleteExchangeListingDraftMedia(item.mediaAssetId)));
+  };
+
+  const closePost = () => {
+    if (postSubmitting) return;
+    setPostOpen(false);
+    setPostStep(1);
+    const staged = postStagedMedia;
+    setPostStagedMedia([]);
+    setPostMediaFiles([]);
+    setPostMediaProgress("");
+    void Promise.allSettled(staged.map((item) => deleteExchangeListingDraftMedia(item.mediaAssetId)));
+  };
+
+  const closeEdit = () => {
+    if (editSubmitting) return;
+    setEditOpen(false);
+    setEditMediaIds([]);
+    const staged = editStagedMedia;
+    setEditStagedMedia([]);
+    setEditMediaFiles([]);
+    setEditMediaProgress("");
+    void Promise.allSettled(staged.map((item) => deleteExchangeListingDraftMedia(item.mediaAssetId)));
+  };
+
+  useEffect(() => {
+    if (postOpen || postStagedMedia.length === 0) return;
+    const abandoned = postStagedMedia;
+    setPostStagedMedia([]);
+    setPostMediaFiles([]);
+    void Promise.allSettled(abandoned.map((item) => deleteExchangeListingDraftMedia(item.mediaAssetId)));
+  }, [postOpen, postStagedMedia]);
+
+  useEffect(() => {
+    if (editOpen || editStagedMedia.length === 0) return;
+    const abandoned = editStagedMedia;
+    setEditStagedMedia([]);
+    setEditMediaFiles([]);
+    setEditMediaIds([]);
+    void Promise.allSettled(abandoned.map((item) => deleteExchangeListingDraftMedia(item.mediaAssetId)));
+  }, [editOpen, editStagedMedia]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -570,6 +669,8 @@ export function CommunityExchangeView() {
     setPostError("");
     setPostStep(1);
     setPostForm((current) => ({ ...current, neighborhood: location?.label ?? current.neighborhood }));
+    setPostMediaFiles([]);
+    setPostStagedMedia([]);
     setPostOpen(true);
   };
 
@@ -582,15 +683,35 @@ export function CommunityExchangeView() {
     setPostSubmitting(true);
     setPostError("");
     try {
-      const result = await createExchangeListing(postForm);
+      let staged = postStagedMedia;
+      if (postMediaFiles.length > 0) {
+        if (!currentUser?.id) throw new Error("Sign in again before uploading listing media.");
+        staged = await ensureStagedListingFiles(
+          postMediaFiles,
+          staged,
+          Number(currentUser.id),
+          new AbortController().signal,
+          setPostMediaProgress,
+          setPostStagedMedia,
+        );
+      }
+      const result = await createExchangeListing({
+        ...postForm,
+        media_asset_ids: postMediaFiles.map((file) => staged.find((item) => item.file === file)?.mediaAssetId)
+          .filter((id): id is number => id !== undefined),
+      });
       setNotice(result.message || "Your community post was received.");
       setPostOpen(false);
       setPostStep(1);
       setPostForm((current) => ({ ...current, title: "", description: "", pickup_notes: "" }));
+      setPostMediaFiles([]);
+      setPostStagedMedia([]);
+      setPostMediaProgress("");
       setRefreshTick((tick) => tick + 1);
     } catch (error) {
       setPostError(error instanceof Error ? error.message : "Your post could not be shared.");
     } finally {
+      setPostMediaProgress("");
       setPostSubmitting(false);
     }
   };
@@ -620,14 +741,46 @@ export function CommunityExchangeView() {
     setEditSubmitting(true);
     setEditError("");
     try {
-      const result = await updateExchangeListing(listingId, editForm);
+      const originalIds = selectedListing?.media?.map((item) => item.media_asset_id) ?? [];
+      const mediaChanged = editMediaFiles.length > 0
+        || originalIds.length !== editMediaIds.length
+        || originalIds.some((mediaId, index) => editMediaIds[index] !== mediaId);
+      let staged = editStagedMedia;
+      let mediaAssetIds: number[] | undefined;
+      if (mediaChanged) {
+        if (editMediaFiles.length > 0) {
+          if (!currentUser?.id) throw new Error("Sign in again before uploading listing media.");
+          staged = await ensureStagedListingFiles(
+            editMediaFiles,
+            staged,
+            Number(currentUser.id),
+            new AbortController().signal,
+            setEditMediaProgress,
+            setEditStagedMedia,
+          );
+        }
+        mediaAssetIds = [
+          ...editMediaIds,
+          ...editMediaFiles.map((file) => staged.find((item) => item.file === file)?.mediaAssetId)
+            .filter((mediaAssetId): mediaAssetId is number => mediaAssetId !== undefined),
+        ];
+      }
+      const result = await updateExchangeListing(listingId, {
+        ...editForm,
+        ...(mediaAssetIds === undefined ? {} : { media_asset_ids: mediaAssetIds }),
+      });
       setNotice(result.message || "Listing updated.");
       setEditOpen(false);
+      setEditMediaIds([]);
+      setEditMediaFiles([]);
+      setEditStagedMedia([]);
+      setEditMediaProgress("");
       setSelectedId(null);
       setRefreshTick((tick) => tick + 1);
     } catch (error) {
       setEditError(error instanceof Error ? error.message : "The listing could not be updated.");
     } finally {
+      setEditMediaProgress("");
       setEditSubmitting(false);
     }
   };
@@ -864,7 +1017,7 @@ export function CommunityExchangeView() {
       )}
 
       {postOpen && (
-        <ModalFrame title="Post to Exchange" eyebrow={`Step ${postStep} of 3`} onClose={() => setPostOpen(false)} wide>
+        <ModalFrame title="Post to Exchange" eyebrow={`Step ${postStep} of 3`} onClose={closePost} wide>
           <div className="mb-6 flex items-center gap-2" aria-label={`Posting step ${postStep} of 3`}>
             {[1, 2, 3].map((step) => <div key={step} className={`h-1.5 flex-1 rounded-full ${step <= postStep ? "bg-primary" : "bg-muted"}`} />)}
           </div>
@@ -872,6 +1025,15 @@ export function CommunityExchangeView() {
             {postStep === 1 && <div className="space-y-5"><div><h3 className="text-lg font-black">What kind of solidarity is this?</h3><p className="mt-1 text-sm text-muted-foreground">Choose whether you are offering something or naming a need.</p></div><div className="grid gap-3 sm:grid-cols-2">{([["offer", "I can offer", "Share a free item or skill.", HandHeart], ["need", "I need", "Ask neighbors for practical support.", HeartHandshake]] as const).map(([value, label, description, Icon]) => <button key={value} type="button" onClick={() => setPostForm((current) => ({ ...current, listing_type: value }))} className={`rounded-2xl border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-primary ${postForm.listing_type === value ? "border-primary bg-primary/10" : "border-border hover:bg-muted"}`} data-testid={`button-post-type-${value}`}><Icon className={`h-6 w-6 ${postForm.listing_type === value ? "text-primary" : "text-muted-foreground"}`} aria-hidden="true" /><p className="mt-3 font-black">{label}</p><p className="mt-1 text-sm text-muted-foreground">{description}</p></button>)}</div><div><p className="mb-2 text-xs font-bold">Is it a thing or a skill?</p><div className="grid grid-cols-2 gap-2">{([["goods", "Goods", Package], ["services", "Services", Wrench]] as const).map(([value, label, Icon]) => <button key={value} type="button" onClick={() => setPostForm((current) => ({ ...current, resource_type: value }))} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary ${postForm.resource_type === value ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"}`} data-testid={`button-post-resource-${value}`}><Icon className="h-4 w-4" /> {label}</button>)}</div></div></div>}
             {postStep === 2 && <div className="space-y-4"><div><h3 className="text-lg font-black">Add the useful details</h3><p className="mt-1 text-sm text-muted-foreground">Be specific and kind. Do not include phone numbers, addresses, links, or payment details.</p></div><div className="space-y-2"><FieldLabel htmlFor="post-title">Short title</FieldLabel><input id="post-title" required minLength={3} maxLength={100} value={postForm.title} onChange={(event) => setPostForm((current) => ({ ...current, title: event.target.value }))} placeholder={postForm.resource_type === "services" ? "Help with basic bike repairs" : "Clean winter coats, mixed sizes"} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-title" /></div><div className="space-y-2"><FieldLabel htmlFor="post-description">Description</FieldLabel><textarea id="post-description" required minLength={10} maxLength={2000} rows={5} value={postForm.description} onChange={(event) => setPostForm((current) => ({ ...current, description: event.target.value }))} placeholder="What should a neighbor know?" className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-description" /></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><FieldLabel htmlFor="post-category">Category</FieldLabel><select id="post-category" value={postForm.category} onChange={(event) => setPostForm((current) => ({ ...current, category: event.target.value as ExchangeCategory }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="select-post-category">{categories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select></div><div className="space-y-2"><FieldLabel htmlFor="post-condition">Condition / format</FieldLabel><select id="post-condition" value={postForm.condition} onChange={(event) => setPostForm((current) => ({ ...current, condition: event.target.value as ExchangeCondition }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="select-post-condition">{conditions.map((condition) => <option key={condition.value} value={condition.value}>{condition.label}</option>)}</select></div></div></div>}
              {postStep === 3 && <div className="space-y-4"><div><h3 className="text-lg font-black">Set a coarse handoff area</h3><p className="mt-1 text-sm text-muted-foreground">Keep the first exchange public and general. You can coordinate a safer detail later inside Niakofa.</p></div><div className="space-y-2"><FieldLabel htmlFor="post-neighborhood">Neighborhood or ZIP</FieldLabel><input id="post-neighborhood" required minLength={2} maxLength={80} value={postForm.neighborhood} onChange={(event) => setPostForm((current) => ({ ...current, neighborhood: event.target.value }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-neighborhood" /></div><div className="space-y-2"><FieldLabel htmlFor="post-pickup-location-type">Public pickup location type</FieldLabel><select id="post-pickup-location-type" required value={postForm.pickup_location_type} onChange={(event) => setPostForm((current) => ({ ...current, pickup_location_type: event.target.value as ExchangePickupLocationType }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="select-post-pickup-location-type">{pickupLocationTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div><div className="space-y-2"><FieldLabel htmlFor="post-pickup-notes">Public pickup notes (optional)</FieldLabel><textarea id="post-pickup-notes" maxLength={500} rows={3} value={postForm.pickup_notes} onChange={(event) => setPostForm((current) => ({ ...current, pickup_notes: event.target.value }))} placeholder="Example: daytime handoff near the library" className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/30" data-testid="input-post-pickup-notes" /></div><div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 text-sm leading-relaxed text-muted-foreground"><ShieldCheck className="mr-2 inline h-4 w-4 text-primary" aria-hidden="true" /> Your post is free to the community and may be held for a quick safety review before it appears.</div></div>}
+            {postStep === 3 && <ExchangeListingMediaEditor
+              idPrefix="post"
+              selectedMediaIds={[]}
+              onSelectedMediaIdsChange={() => undefined}
+              files={postMediaFiles}
+              onFilesChange={updatePostMediaFiles}
+              disabled={postSubmitting}
+              progress={postMediaProgress}
+            />}
             {postError && <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert" data-testid="error-post">{postError}</p>}
             <div className="flex items-center justify-between gap-3 border-t border-border pt-4"><button type="button" onClick={() => postStep === 1 ? setPostOpen(false) : setPostStep((step) => step - 1)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-bold hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary" data-testid="button-post-back">{postStep === 1 ? "Cancel" : <><ArrowLeft className="h-4 w-4" /> Back</>}</button><button type="submit" disabled={postSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground hover:bg-primary/90 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-primary" data-testid="button-post-next">{postSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{postStep === 3 ? "Share with neighbors" : "Continue"} {!postSubmitting && <ChevronRight className="h-4 w-4" />}</button></div>
           </form>
@@ -879,7 +1041,7 @@ export function CommunityExchangeView() {
       )}
 
        {editOpen && (
-         <ModalFrame title="Edit Exchange post" eyebrow="Before pickup coordination is accepted" onClose={() => setEditOpen(false)} wide>
+         <ModalFrame title="Edit Exchange post" eyebrow="Before pickup coordination is accepted" onClose={closeEdit} wide>
            <form onSubmit={submitEdit} className="space-y-4">
               <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 text-sm leading-relaxed text-muted-foreground">
                 You can edit while this listing is active and before pickup coordination is accepted or held. Editing stops once a request is accepted or the listing is held for review. Updates go through the same safety review as a new post. Keep exact addresses, phone numbers, links, and payment details out of the post.
@@ -897,6 +1059,16 @@ export function CommunityExchangeView() {
              <div className="space-y-2"><FieldLabel htmlFor="edit-neighborhood">Neighborhood or ZIP</FieldLabel><input id="edit-neighborhood" required minLength={2} maxLength={80} value={editForm.neighborhood} onChange={(event) => setEditForm((current) => ({ ...current, neighborhood: event.target.value }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" data-testid="input-edit-neighborhood" /></div>
               <div className="space-y-2"><FieldLabel htmlFor="edit-pickup-location-type">Public pickup location type</FieldLabel><select id="edit-pickup-location-type" required value={editForm.pickup_location_type} onChange={(event) => setEditForm((current) => ({ ...current, pickup_location_type: event.target.value as ExchangePickupLocationType }))} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" data-testid="select-edit-pickup-location-type">{pickupLocationTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
              <div className="space-y-2"><FieldLabel htmlFor="edit-pickup-notes">Public pickup notes (optional)</FieldLabel><textarea id="edit-pickup-notes" maxLength={500} rows={3} value={editForm.pickup_notes} onChange={(event) => setEditForm((current) => ({ ...current, pickup_notes: event.target.value }))} className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm" data-testid="input-edit-pickup-notes" /></div>
+              <ExchangeListingMediaEditor
+                idPrefix="edit"
+                existingMedia={selectedListing?.media ?? []}
+                selectedMediaIds={editMediaIds}
+                onSelectedMediaIdsChange={setEditMediaIds}
+                files={editMediaFiles}
+                onFilesChange={updateEditMediaFiles}
+                disabled={editSubmitting}
+                progress={editMediaProgress}
+              />
              {editError && <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert" data-testid="error-edit-listing">{editError}</p>}
              <div className="flex justify-end gap-2 border-t border-border pt-4"><button type="button" onClick={() => setEditOpen(false)} className="min-h-10 rounded-xl border border-border px-4 py-2 text-sm font-bold hover:bg-muted">Cancel</button><button type="submit" disabled={editSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:opacity-60" data-testid="button-save-edit-listing">{editSubmitting && <Loader2 className="h-4 w-4 animate-spin" />} Save changes</button></div>
            </form>
@@ -904,7 +1076,8 @@ export function CommunityExchangeView() {
        )}
 
       {selectedId !== null && (
-       <ModalFrame title={selectedListing?.title || "Listing details"} eyebrow="Community post" onClose={() => setSelectedId(null)} wide>
+        <ModalFrame title={selectedListing?.title || "Listing details"} eyebrow="Community post" onClose={() => setSelectedId(null)} wide>
+            {!detailLoading && !detailError && selectedListing?.id === selectedId && <ExchangeListingMediaGallery media={selectedListing.media} />}
            {selectedListing?.seller_id === currentUser?.id && selectedListing?.status === "active" && <button
              type="button" disabled={withdrawSubmitting}
              onClick={() => void withdrawListing(selectedListing)}
@@ -913,6 +1086,10 @@ export function CommunityExchangeView() {
            >{withdrawSubmitting ? "Withdrawing…" : "Withdraw listing"}</button>}
            {selectedListing && selectedListing.seller_id === currentUser?.id && selectedListing.status === "active" && !requestsLoading && !pickupRequests.some((request) => request.listing_id === selectedListing.id && request.status === "accepted") && <button type="button" onClick={() => {
              setEditError("");
+              setEditMediaIds(selectedListing.media?.map((item) => item.media_asset_id) ?? []);
+              setEditMediaFiles([]);
+              setEditStagedMedia([]);
+              setEditMediaProgress("");
              setEditForm({
                listing_type: selectedListing.listing_type,
                resource_type: selectedListing.resource_type,

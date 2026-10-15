@@ -59,6 +59,30 @@ async function createSyntheticVideo(): Promise<Buffer> {
   }
 }
 
+async function createSyntheticImage(): Promise<Buffer> {
+  const directory = await mkdtemp(path.join(tmpdir(), "niakofa-exchange-image-"));
+  const outputPath = path.join(directory, "listing.png");
+  try {
+    execFileSync(process.env.FFMPEG_PATH?.trim() || "ffmpeg", [
+      "-nostdin",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=orange:s=320x240",
+      "-frames:v",
+      "1",
+      "-y",
+      outputPath,
+    ], { stdio: "ignore" });
+    return await readFile(outputPath);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 suite("isolated cross-community content and media access matrix", () => {
   const app = express();
   app.use(express.json());
@@ -99,6 +123,8 @@ suite("isolated cross-community content and media access matrix", () => {
   let videoUploadMarker: string | undefined;
   let familyId: number | undefined;
   let exchangeListingId: number | undefined;
+  let exchangeMediaListingId: number | undefined;
+  let textOnlyListingId: number | undefined;
   let sparkId: number | undefined;
   let hubPostId: number | undefined;
   let hubCommunityMediaId: number | undefined;
@@ -223,6 +249,12 @@ suite("isolated cross-community content and media access matrix", () => {
     if (exchangeListingId) {
       await attempt("DELETE FROM exchange_listings WHERE id = $1", [exchangeListingId]);
     }
+    if (exchangeMediaListingId) {
+      await attempt("DELETE FROM exchange_listings WHERE id = $1", [exchangeMediaListingId]);
+    }
+    if (textOnlyListingId) {
+      await attempt("DELETE FROM exchange_listings WHERE id = $1", [textOnlyListingId]);
+    }
     if (familyId) {
       await attempt("DELETE FROM families WHERE id = $1", [familyId]);
     }
@@ -280,6 +312,7 @@ suite("isolated cross-community content and media access matrix", () => {
       "0186_family_story_experience.sql",
       "0189_resumable_media_uploads.sql",
       "0196_moment_video_single_clip.sql",
+      "0197_exchange_listing_media.sql",
     ];
     const { rows: migrationRows } = await pool.query<{ filename: string }>(
       "SELECT filename FROM _migrations_applied WHERE filename = ANY($1::text[])",
@@ -1062,6 +1095,200 @@ suite("isolated cross-community content and media access matrix", () => {
     expect(sameCommunityFeedAfterDelete.body.stories.some(
       (story: { id: number }) => story.id === videoStoryId,
     )).toBe(false);
+  });
+
+  it("creates, edits, serves, and cleans up approved-ready Exchange listing media", async () => {
+    expect(authorId).toBeDefined();
+    expect(authorToken).toBeTruthy();
+    expect(sameCommunityReaderToken).toBeTruthy();
+    const queueJobs: Array<{ name: string; data: MediaJobData }> = [];
+    const restoreQueue = setMediaProcessingQueueForTest({
+      add: async (name: string, data: MediaJobData) => {
+        queueJobs.push({ name, data });
+        return undefined;
+      },
+    } as unknown as Parameters<typeof setMediaProcessingQueueForTest>[0]);
+
+    const uploadAsset = async (mediaType: "photo" | "video", mimeType: string, bytes: Buffer, name: string) => {
+      const initialized = await withMediaPlatformEnabled(() => request(app)
+        .post("/media-assets/uploads")
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({
+          contextKind: "exchange_listing_draft",
+          contextId: authorId,
+          mediaType,
+          mimeType,
+          originalName: name,
+          byteSize: bytes.length,
+        }));
+      expect(initialized.status).toBe(201);
+      const mediaAssetId = Number(initialized.body.media_asset_id);
+      expect(Number.isSafeInteger(mediaAssetId)).toBe(true);
+      mediaAssetIds.push(mediaAssetId);
+
+      const uploaded = await withMediaPlatformEnabled(() => request(app)
+        .put(`/media-assets/${mediaAssetId}/upload`)
+        .set("Authorization", `Bearer ${authorToken}`)
+        .set("Content-Type", mimeType)
+        .send(bytes));
+      expect(uploaded.status).toBe(204);
+      const completed = await withMediaPlatformEnabled(() => request(app)
+        .post(`/media-assets/${mediaAssetId}/complete`)
+        .set("Authorization", `Bearer ${authorToken}`));
+      expect(completed.status).toBe(202);
+      return mediaAssetId;
+    };
+
+    const runQueuedJobs = async (assetIds: number[]) => {
+      for (const queued of queueJobs.filter((job) => assetIds.includes(job.data.mediaAssetId))) {
+        await withMediaPlatformEnabled(() => processMediaJob({
+          id: `runtime-exchange-listing-${queued.data.mediaAssetId}-${queued.data.jobType}`,
+          data: queued.data,
+          attemptsMade: 0,
+        } as unknown as Parameters<typeof processMediaJob>[0]));
+      }
+    };
+
+    let listingId: number | undefined;
+    try {
+      const imageId = await uploadAsset("photo", "image/png", await createSyntheticImage(), `listing-${randomUUID()}.png`);
+      const videoId = await uploadAsset("video", "video/mp4", await createSyntheticVideo(), `listing-${randomUUID()}.mp4`);
+      const createResponse = await withMediaPlatformEnabled(() => request(app)
+        .post("/community/exchange/listings")
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({
+          listing_type: "offer",
+          resource_type: "goods",
+          title: "Exchange media listing fixture",
+          description: "A test listing with one photo and one short video.",
+          category: "household",
+          condition: "good",
+          neighborhood: "Test neighborhood",
+          pickup_location_type: "public_place",
+          media_asset_ids: [imageId, videoId],
+        }));
+      if (createResponse.status !== 201) {
+        throw new Error(`Exchange media listing create failed (${createResponse.status}): ${JSON.stringify(createResponse.body)}`);
+      }
+      listingId = createResponse.body.listing.id as number;
+      exchangeMediaListingId = listingId;
+      expect(createResponse.body.listing.media).toEqual(expect.arrayContaining([
+        expect.objectContaining({ media_asset_id: imageId, media_type: "photo", status: "processing" }),
+        expect.objectContaining({ media_asset_id: videoId, media_type: "video", status: "processing" }),
+      ]));
+      const pendingPublicRead = await withMediaPlatformEnabled(() => request(app)
+        .get(`/community/exchange/listings/${listingId}`)
+        .set("Authorization", `Bearer ${sameCommunityReaderToken}`));
+      expect(pendingPublicRead.status).toBe(200);
+      expect(pendingPublicRead.body.listing.media).toEqual([]);
+
+      const { rows: reboundAssets } = await pool.query<{
+        context_kind: string;
+        context_id: number;
+        status: string;
+      }>(
+        "SELECT context_kind, context_id, status FROM media_assets WHERE id = ANY($1::integer[]) ORDER BY id",
+        [[imageId, videoId].sort((a, b) => a - b)],
+      );
+      expect(reboundAssets).toHaveLength(2);
+      expect(reboundAssets.every((asset) => asset.context_kind === "exchange_listing" && asset.context_id === listingId)).toBe(true);
+
+      await runQueuedJobs([imageId, videoId]);
+      const publicRead = await withMediaPlatformEnabled(() => request(app)
+        .get(`/community/exchange/listings/${listingId}`)
+        .set("Authorization", `Bearer ${sameCommunityReaderToken}`));
+      expect(publicRead.status).toBe(200);
+      expect(publicRead.body.listing.media).toHaveLength(2);
+      expect(publicRead.body.listing.media.every((item: { status: string }) => item.status === "ready")).toBe(true);
+      const publicFeed = await withMediaPlatformEnabled(() => request(app)
+        .get("/community/exchange/listings")
+        .set("Authorization", `Bearer ${sameCommunityReaderToken}`));
+      expect(publicFeed.body.listings.find((item: { id: number }) => item.id === listingId)?.media).toHaveLength(2);
+
+      const imageRead = await withMediaPlatformEnabled(() => request(app)
+        .get(`/media-assets/${imageId}`)
+        .set("Authorization", `Bearer ${sameCommunityReaderToken}`));
+      expect(imageRead.status).toBe(200);
+      const videoRead = await withMediaPlatformEnabled(() => request(app)
+        .get(`/media-assets/${videoId}`)
+        .set("Authorization", `Bearer ${sameCommunityReaderToken}`));
+      expect(videoRead.status).toBe(200);
+
+      await pool.query("UPDATE exchange_listings SET moderation_status = 'held' WHERE id = $1", [listingId]);
+      const heldListingRead = await request(app)
+        .get(`/community/exchange/listings/${listingId}`)
+        .set("Authorization", `Bearer ${sameCommunityReaderToken}`);
+      const heldMediaRead = await withMediaPlatformEnabled(() => request(app)
+        .get(`/media-assets/${imageId}`)
+        .set("Authorization", `Bearer ${sameCommunityReaderToken}`));
+      expect(heldListingRead.status).toBe(404);
+      expect(heldMediaRead.status).toBe(404);
+      await pool.query("UPDATE exchange_listings SET moderation_status = 'approved' WHERE id = $1", [listingId]);
+
+      const textEdit = await withMediaPlatformEnabled(() => request(app)
+        .patch(`/community/exchange/listings/${listingId}`)
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({ title: `Edited media fixture ${randomUUID()}` }));
+      expect(textEdit.status).toBe(200);
+      expect(textEdit.body.listing.media).toHaveLength(2);
+
+      const removeVideo = await withMediaPlatformEnabled(() => request(app)
+        .patch(`/community/exchange/listings/${listingId}`)
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({ media_asset_ids: [imageId] }));
+      expect(removeVideo.status).toBe(200);
+      expect(removeVideo.body.listing.media).toHaveLength(1);
+      expect(removeVideo.body.listing.media[0].media_asset_id).toBe(imageId);
+      const { rows: removedVideoRows } = await pool.query<{ status: string; original_key: string }>(
+        "SELECT status, original_key FROM media_assets WHERE id = $1",
+        [videoId],
+      );
+      expect(removedVideoRows[0]?.status).toBe("deleted");
+      expect(existsSync(path.resolve(UPLOADS_BASE, removedVideoRows[0]!.original_key))).toBe(false);
+
+      const newEditImageId = await uploadAsset("photo", "image/png", await createSyntheticImage(), `edit-${randomUUID()}.png`);
+      await runQueuedJobs([newEditImageId]);
+      const attachDuringEdit = await withMediaPlatformEnabled(() => request(app)
+        .patch(`/community/exchange/listings/${listingId}`)
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({ media_asset_ids: [imageId, newEditImageId] }));
+      expect(attachDuringEdit.status).toBe(200);
+      expect(attachDuringEdit.body.listing.media.map((item: { media_asset_id: number }) => item.media_asset_id))
+        .toEqual([imageId, newEditImageId]);
+
+      const clearAllMedia = await withMediaPlatformEnabled(() => request(app)
+        .patch(`/community/exchange/listings/${listingId}`)
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({ media_asset_ids: [] }));
+      expect(clearAllMedia.status).toBe(200);
+      expect(clearAllMedia.body.listing.media).toEqual([]);
+      const { rows: finalAssets } = await pool.query<{ id: number; status: string; original_key: string }>(
+        "SELECT id, status, original_key FROM media_assets WHERE id = ANY($1::integer[])",
+        [[imageId, newEditImageId]],
+      );
+      expect(finalAssets).toHaveLength(2);
+      expect(finalAssets.every((asset) => asset.status === "deleted")).toBe(true);
+      expect(finalAssets.every((asset) => !existsSync(path.resolve(UPLOADS_BASE, asset.original_key)))).toBe(true);
+
+      const textOnly = await request(app)
+        .post("/community/exchange/listings")
+        .set("Authorization", `Bearer ${authorToken}`)
+        .send({
+          listing_type: "offer",
+          resource_type: "goods",
+          title: "No media listing fixture",
+          description: "A community listing without attached photos or video.",
+          category: "household",
+          condition: "good",
+          neighborhood: "Test neighborhood",
+          pickup_location_type: "public_place",
+        });
+      expect(textOnly.status).toBe(201);
+      textOnlyListingId = textOnly.body.listing.id as number;
+      expect(textOnly.body.listing.media).toEqual([]);
+    } finally {
+      restoreQueue();
+    }
   });
 
   it("allows a different-community member into a public Spiral but gates media tokens on active participation", async () => {

@@ -1,7 +1,8 @@
 import { sql } from "drizzle-orm";
-import { index, integer, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, real, boolean } from "drizzle-orm/pg-core";
+import { check, index, integer, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, real, boolean } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { geographyPoint } from "./geography";
+import { mediaAssetsTable } from "./media-assets";
 
 export const exchangePickupLocationType = pgEnum("exchange_pickup_location_type", [
   "public_place",
@@ -50,6 +51,19 @@ export const exchangeListingsTable = pgTable("exchange_listings", {
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const exchangeListingMediaTable = pgTable("exchange_listing_media", {
+  id: serial("id").primaryKey(),
+  listing_id: integer("listing_id").notNull().references(() => exchangeListingsTable.id, { onDelete: "cascade" }),
+  media_asset_id: integer("media_asset_id").notNull().references(() => mediaAssetsTable.id, { onDelete: "cascade" }),
+  position: integer("position").notNull().default(0),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("exchange_listing_media_listing_position_idx").on(table.listing_id, table.position),
+  uniqueIndex("exchange_listing_media_asset_uidx").on(table.media_asset_id),
+  uniqueIndex("exchange_listing_media_listing_position_uidx").on(table.listing_id, table.position),
+  check("exchange_listing_media_position_check", sql`${table.position} BETWEEN 0 AND 5`),
+]);
 
 export const exchangePickupRequestsTable = pgTable("exchange_pickup_requests", {
   id: serial("id").primaryKey(),

@@ -1,15 +1,17 @@
 import { Router } from "express";
 import { exchangeAccountsAreActive, lockExchangeAccounts } from "../lib/exchange-account-lifecycle";
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import {
   db,
   directMessageBlocksTable,
+  exchangeListingMediaTable,
   exchangeListingsTable,
   exchangePickupRequestsTable,
   exchangeSparksTable,
   communityStoriesTable,
   communityStoryMediaTable,
   mediaAssetsTable,
+  mediaProcessingJobsTable,
   reportsTable,
   usersTable,
 } from "@workspace/db";
@@ -18,6 +20,9 @@ import { requireApproved, requireAuth } from "../middlewares/auth";
 import { generalApiLimiter, communityPostLimiter } from "../middlewares/rate-limit";
 import { moderatePostText } from "../lib/post-moderation";
 import { logger } from "../lib/logger";
+import { deleteAssetStrict } from "../lib/storage";
+import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import { mediaStorageKeys } from "../lib/media-cleanup";
 import { sendPushToUser } from "./push";
 import { createMessageNotification } from "../lib/message-notifications";
 import {
@@ -39,6 +44,20 @@ const PICKUP_LOCATION_TYPE_VALUES = ["public_place", "community_center", "librar
 const EXCHANGE_IMPACT_PRIVACY_THRESHOLD = 5;
 const EXCHANGE_HOLD_REPORT_THRESHOLD = 3;
 const EXCHANGE_PICKUP_COORDINATION_HOURS = 48;
+const EXCHANGE_LISTING_MEDIA_LIMIT = 6;
+const EXCHANGE_LISTING_VIDEO_LIMIT = 1;
+const EXCHANGE_LISTING_VIDEO_MAX_DURATION_MS = 180_000;
+const EXCHANGE_LISTING_MEDIA_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "video/mp4",
+  "video/webm",
+]);
+const listingMediaAssetIdsSchema = z.array(z.number().int().positive())
+  .max(EXCHANGE_LISTING_MEDIA_LIMIT)
+  .refine((ids) => new Set(ids).size === ids.length, "A media asset can only be attached once.");
 
 const listingBody = z.object({
   listing_type: z.enum(LISTING_TYPE_VALUES).default("offer"),
@@ -50,6 +69,7 @@ const listingBody = z.object({
   neighborhood: z.string().trim().min(2).max(80),
   pickup_location_type: z.enum(PICKUP_LOCATION_TYPE_VALUES).default("other_public"),
   pickup_notes: z.string().trim().max(500).optional().default(""),
+  media_asset_ids: listingMediaAssetIdsSchema.optional().default([]),
 });
 
 const listingEditBody = z.object({
@@ -62,6 +82,7 @@ const listingEditBody = z.object({
   neighborhood: z.string().trim().min(2).max(80).optional(),
   pickup_location_type: z.enum(PICKUP_LOCATION_TYPE_VALUES).optional(),
   pickup_notes: z.string().trim().max(500).optional(),
+  media_asset_ids: listingMediaAssetIdsSchema.optional(),
 }).refine((value) => Object.keys(value).length > 0, {
   message: "At least one listing field is required.",
 });
@@ -166,6 +187,166 @@ function serializeListing(listing: Record<string, unknown>): Record<string, unkn
       .filter(([key]) => key !== "latitude" && key !== "longitude")
       .map(([key, value]) => [key, serialize(value)]),
   );
+}
+
+type ExchangeListingMediaAssetForBinding = {
+  id: number;
+  owner_user_id: number;
+  context_kind: string;
+  context_id: number;
+  media_type: string;
+  mime_type: string;
+  byte_size: number;
+  duration_ms: number | null;
+  status: string;
+  metadata: Record<string, unknown> | null;
+};
+
+type ExchangeListingMediaView = {
+  media_asset_id: number;
+  media_type: "photo" | "video";
+  mime_type: string;
+  status: string;
+  duration_ms: number | null;
+  width: number | null;
+  height: number | null;
+  thumbnail_url: string | null;
+  media_url: string | null;
+};
+
+function validateListingMediaSet(
+  assets: ExchangeListingMediaAssetForBinding[],
+  requestedIds: number[],
+  ownerId: number,
+  existingAssetIds: Set<number> = new Set(),
+  listingId?: number,
+): string | null {
+  if (assets.length !== requestedIds.length) return "One or more media files are unavailable or belong to another account.";
+  if (assets.filter((asset) => asset.media_type === "video").length > EXCHANGE_LISTING_VIDEO_LIMIT) {
+    return "A post can include up to one short video.";
+  }
+  for (const asset of assets) {
+    if (asset.owner_user_id !== ownerId) return "One or more media files are unavailable or belong to another account.";
+    if (!["photo", "video"].includes(asset.media_type)
+      || !EXCHANGE_LISTING_MEDIA_MIME_TYPES.has(asset.mime_type)
+      || asset.media_type === "photo" && !asset.mime_type.startsWith("image/")
+      || asset.media_type === "video" && !asset.mime_type.startsWith("video/")
+      || asset.byte_size < 1 || asset.byte_size > 64 * 1024 * 1024) {
+      return "Only JPEG, PNG, GIF, or WebP photos and MP4 or WebM videos up to 64 MiB are supported.";
+    }
+    if (asset.media_type === "video" && asset.duration_ms !== null
+      && asset.duration_ms > EXCHANGE_LISTING_VIDEO_MAX_DURATION_MS) {
+      return "Exchange videos must be 180 seconds or shorter.";
+    }
+    const isExisting = existingAssetIds.has(asset.id);
+    const validContext = isExisting
+      ? asset.context_kind === "exchange_listing" && asset.context_id === listingId
+      : asset.context_kind === "exchange_listing_draft" && asset.context_id === ownerId;
+    const validStatus = isExisting
+      ? ["processing", "ready", "failed"].includes(asset.status)
+      : ["processing", "ready"].includes(asset.status);
+    if (!validContext || !validStatus || asset.metadata?.["signature_validated"] !== true) {
+      return "One or more media files are still uploading or could not be verified. Remove them and try again.";
+    }
+  }
+  return null;
+}
+
+async function getListingMedia(
+  listings: Array<{ id: number; seller_id: number; status: string; moderation_status: string }>,
+  viewerId: number,
+): Promise<Map<number, ExchangeListingMediaView[]>> {
+  const result = new Map<number, ExchangeListingMediaView[]>();
+  if (!listings.length || !isMediaPlatformV21Enabled()) return result;
+
+  const rows = await db.select({
+    listing_id: exchangeListingMediaTable.listing_id,
+    media_asset_id: mediaAssetsTable.id,
+    media_type: mediaAssetsTable.media_type,
+    mime_type: mediaAssetsTable.mime_type,
+    status: mediaAssetsTable.status,
+    duration_ms: mediaAssetsTable.duration_ms,
+    width: mediaAssetsTable.width,
+    height: mediaAssetsTable.height,
+    thumbnail_key: mediaAssetsTable.thumbnail_key,
+  }).from(exchangeListingMediaTable)
+    .innerJoin(mediaAssetsTable, eq(mediaAssetsTable.id, exchangeListingMediaTable.media_asset_id))
+    .where(and(
+      inArray(exchangeListingMediaTable.listing_id, listings.map((listing) => listing.id)),
+      ne(mediaAssetsTable.status, "deleted"),
+    ))
+    .orderBy(asc(exchangeListingMediaTable.listing_id), asc(exchangeListingMediaTable.position));
+
+  const listingsById = new Map(listings.map((listing) => [listing.id, listing]));
+  for (const row of rows) {
+    if (row.media_type !== "photo" && row.media_type !== "video") continue;
+    const listing = listingsById.get(row.listing_id);
+    if (!listing) continue;
+    const isOwner = listing.seller_id === viewerId;
+    const isPublicApproved = listing.status === "active" && listing.moderation_status === "approved";
+    if (!isOwner && !isPublicApproved) continue;
+    if (!isOwner && row.status !== "ready") continue;
+    if (row.status !== "ready" && !isOwner) continue;
+    const items = result.get(row.listing_id) ?? [];
+    items.push({
+      media_asset_id: row.media_asset_id,
+      media_type: row.media_type === "video" ? "video" : "photo",
+      mime_type: row.mime_type,
+      status: row.status,
+      duration_ms: row.duration_ms,
+      width: row.width,
+      height: row.height,
+      thumbnail_url: row.status === "ready" && row.thumbnail_key
+        ? `/api/media-assets/${row.media_asset_id}/thumbnail`
+        : null,
+      media_url: row.status === "ready" ? `/api/media-assets/${row.media_asset_id}` : null,
+    });
+    result.set(row.listing_id, items);
+  }
+  return result;
+}
+
+async function serializeListingWithMedia(
+  listing: { id: number; seller_id: number; status: string; moderation_status: string } & Record<string, unknown>,
+  viewerId: number,
+): Promise<Record<string, unknown>> {
+  const media = await getListingMedia([listing], viewerId);
+  return serializeListing({ ...listing, media: media.get(listing.id) ?? [] });
+}
+
+async function cleanupDeletedListingMedia(assetIds: number[]): Promise<void> {
+  for (const id of assetIds) {
+    const [processingJob] = await db.select({ id: mediaProcessingJobsTable.id })
+      .from(mediaProcessingJobsTable)
+      .where(and(
+        eq(mediaProcessingJobsTable.media_asset_id, id),
+        eq(mediaProcessingJobsTable.status, "processing"),
+      ))
+      .limit(1);
+    if (processingJob) continue;
+    const [asset] = await db.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key,
+      cleanup_keys: mediaAssetsTable.cleanup_keys,
+      metadata: mediaAssetsTable.metadata,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.id, id),
+      eq(mediaAssetsTable.status, "deleted"),
+      sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`,
+    )).limit(1);
+    if (!asset) continue;
+    try {
+      for (const key of mediaStorageKeys(asset)) await deleteAssetStrict(key);
+      await db.update(mediaAssetsTable).set({
+        metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'false'::jsonb, true)`,
+        updated_at: new Date(),
+      }).where(and(eq(mediaAssetsTable.id, id), eq(mediaAssetsTable.status, "deleted")));
+    } catch (error) {
+      logger.warn({ errorName: error instanceof Error ? error.name : typeof error, mediaAssetId: id }, "Exchange listing media cleanup will retry");
+    }
+  }
 }
 
 const EXCHANGE_LISTING_PAGE_SIZE = 24;
@@ -539,8 +720,12 @@ router.get("/community/exchange/listings", requireAuth, requireApproved, general
 
   const hasMore = rows.length > pageSize;
   const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
+  const mediaByListingId = await getListingMedia(pageRows, userId);
   return res.json({
-    listings: pageRows.map((row) => serializeListing(row as unknown as Record<string, unknown>)),
+    listings: pageRows.map((row) => serializeListing({
+      ...row,
+      media: mediaByListingId.get(row.id) ?? [],
+    } as unknown as Record<string, unknown>)),
     next_cursor: hasMore ? encodeListingCursor(pageRows[pageRows.length - 1]) : null,
   });
 });
@@ -560,7 +745,7 @@ router.get("/community/exchange/listings/:id", requireAuth, requireApproved, gen
   ))) {
     return res.status(404).json({ error: "Listing not found" });
   }
-  return res.json({ listing: serializeListing(listing as unknown as Record<string, unknown>) });
+  return res.json({ listing: await serializeListingWithMedia(listing, req.authenticatedUserId!) });
 });
 
 router.post("/community/exchange/listings", requireAuth, requireApproved, communityPostLimiter, async (req, res) => {
@@ -572,32 +757,78 @@ router.post("/community/exchange/listings", requireAuth, requireApproved, commun
     || !safePublicListingArea(data.pickup_notes)) {
     return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
   }
+  if (data.media_asset_ids.length > 0 && !isMediaPlatformV21Enabled()) {
+    return res.status(503).json({ error: "Photo and video uploads are not available in this environment.", error_code: "MEDIA_PLATFORM_DISABLED" });
+  }
   const moderation = moderatePostText(`${data.title}\n${data.description}\n${data.pickup_notes}`);
   const sellerLocation = await getExchangeMatchingLocation(req.authenticatedUserId!);
-  const listing = await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     await lockExchangeAccounts(tx, [req.authenticatedUserId!]);
-    if (!await exchangeAccountsAreActive(tx, [req.authenticatedUserId!])) return null;
+    if (!await exchangeAccountsAreActive(tx, [req.authenticatedUserId!])) return { kind: "account-unavailable" as const };
+
+    let stagedAssets: ExchangeListingMediaAssetForBinding[] = [];
+    if (data.media_asset_ids.length > 0) {
+      const selectedAssets = await tx.select({
+        id: mediaAssetsTable.id,
+        owner_user_id: mediaAssetsTable.owner_user_id,
+        context_kind: mediaAssetsTable.context_kind,
+        context_id: mediaAssetsTable.context_id,
+        media_type: mediaAssetsTable.media_type,
+        mime_type: mediaAssetsTable.mime_type,
+        byte_size: mediaAssetsTable.byte_size,
+        duration_ms: mediaAssetsTable.duration_ms,
+        status: mediaAssetsTable.status,
+        metadata: mediaAssetsTable.metadata,
+      }).from(mediaAssetsTable)
+        .where(inArray(mediaAssetsTable.id, data.media_asset_ids))
+        .for("update");
+      const assetsById = new Map(selectedAssets.map((asset) => [asset.id, asset]));
+      stagedAssets = data.media_asset_ids.flatMap((assetId) => {
+        const asset = assetsById.get(assetId);
+        return asset ? [asset] : [];
+      });
+      const mediaError = validateListingMediaSet(stagedAssets, data.media_asset_ids, req.authenticatedUserId!);
+      if (mediaError) return { kind: "invalid-media" as const, error: mediaError };
+    }
+
     const [created] = await tx.insert(exchangeListingsTable).values({
-    seller_id: req.authenticatedUserId!,
-    listing_type: data.listing_type,
-    resource_type: data.resource_type,
-    title: data.title,
-    description: data.description,
-    category: data.category,
-    condition: data.condition,
-    neighborhood: data.neighborhood,
-    pickup_location_type: data.pickup_location_type,
-    pickup_notes: data.pickup_notes || null,
-    latitude: sellerLocation?.lat ?? null,
-    longitude: sellerLocation?.lng ?? null,
-    moderation_status: moderation.status,
-    moderation_reason: moderation.reason,
+      seller_id: req.authenticatedUserId!,
+      listing_type: data.listing_type,
+      resource_type: data.resource_type,
+      title: data.title,
+      description: data.description,
+      category: data.category,
+      condition: data.condition,
+      neighborhood: data.neighborhood,
+      pickup_location_type: data.pickup_location_type,
+      pickup_notes: data.pickup_notes || null,
+      latitude: sellerLocation?.lat ?? null,
+      longitude: sellerLocation?.lng ?? null,
+      moderation_status: moderation.status,
+      moderation_reason: moderation.reason,
     }).returning();
-    return created;
+    if (!created) return { kind: "account-unavailable" as const };
+    if (data.media_asset_ids.length > 0) {
+      await tx.insert(exchangeListingMediaTable).values(data.media_asset_ids.map((assetId, position) => ({
+        listing_id: created.id,
+        media_asset_id: assetId,
+        position,
+      })));
+      await tx.update(mediaAssetsTable).set({
+        context_kind: "exchange_listing",
+        context_id: created.id,
+        updated_at: new Date(),
+      }).where(inArray(mediaAssetsTable.id, data.media_asset_ids));
+    }
+    return { kind: "created" as const, listing: created };
   });
-  if (!listing) return res.status(403).json({ error: "This account is no longer available for Exchange." });
+  if (result.kind === "account-unavailable") {
+    return res.status(403).json({ error: "This account is no longer available for Exchange." });
+  }
+  if (result.kind === "invalid-media") return res.status(400).json({ error: result.error });
+  const listing = result.listing;
   return res.status(201).json({
-    listing: serializeListing(listing as unknown as Record<string, unknown>),
+    listing: await serializeListingWithMedia(listing, req.authenticatedUserId!),
     message: moderation.status === "approved"
       ? "Listing published."
       : "Listing saved for safety review before it appears publicly.",
@@ -630,30 +861,146 @@ router.patch("/community/exchange/listings/:id", requireAuth, requireApproved, c
     || (data.pickup_notes !== undefined && !safePublicListingArea(data.pickup_notes))) {
     return res.status(400).json({ error: "Use a neighborhood or public pickup area only. Do not include phone numbers, email addresses, links, or exact contact details." });
   }
-  const nextTitle = data.title ?? listing.title;
-  const nextDescription = data.description ?? listing.description;
-  const nextPickupNotes = data.pickup_notes ?? listing.pickup_notes ?? "";
-  const moderation = moderatePostText(`${nextTitle}\n${nextDescription}\n${nextPickupNotes}`);
-  const updates = Object.fromEntries(
-    Object.entries(data).filter(([, value]) => value !== undefined),
-  ) as Partial<typeof exchangeListingsTable.$inferInsert>;
-  const now = new Date();
-  const [updated] = await db.update(exchangeListingsTable)
-    .set({
-      ...updates,
-      pickup_notes: data.pickup_notes === undefined ? undefined : data.pickup_notes || null,
-      moderation_status: moderation.status,
-      moderation_reason: moderation.reason,
-      updated_at: now,
-    })
-    .where(and(
+  const result = await db.transaction(async (tx) => {
+    await lockExchangeAccounts(tx, [req.authenticatedUserId!]);
+    if (!await exchangeAccountsAreActive(tx, [req.authenticatedUserId!])) {
+      return { kind: "account-unavailable" as const };
+    }
+    const [current] = await tx.select().from(exchangeListingsTable).where(and(
       eq(exchangeListingsTable.id, id),
       eq(exchangeListingsTable.seller_id, req.authenticatedUserId!),
-      eq(exchangeListingsTable.status, "active"),
-      eq(exchangeListingsTable.moderation_status, listing.moderation_status),
-    ))
-    .returning();
-  if (!updated) return res.status(409).json({ error: "This listing changed before it could be edited." });
+    )).limit(1).for("update");
+    if (!current) return { kind: "not-found" as const };
+    if (current.status !== "active" || current.moderation_status === "held") {
+      return { kind: "conflict" as const };
+    }
+
+    const currentLinks = await tx.select({
+      media_asset_id: exchangeListingMediaTable.media_asset_id,
+    }).from(exchangeListingMediaTable)
+      .where(eq(exchangeListingMediaTable.listing_id, id))
+      .orderBy(asc(exchangeListingMediaTable.position))
+      .for("update");
+    const currentAssetIds = currentLinks.map((link) => link.media_asset_id);
+    const currentAssetIdSet = new Set(currentAssetIds);
+    const desiredAssetIds = data.media_asset_ids ?? currentAssetIds;
+    if (!isMediaPlatformV21Enabled()
+      && desiredAssetIds.some((assetId) => !currentAssetIdSet.has(assetId))) {
+      return { kind: "media-disabled" as const };
+    }
+    let desiredAssets: ExchangeListingMediaAssetForBinding[] = [];
+    if (data.media_asset_ids !== undefined && desiredAssetIds.length > 0) {
+      const selectedAssets = await tx.select({
+        id: mediaAssetsTable.id,
+        owner_user_id: mediaAssetsTable.owner_user_id,
+        context_kind: mediaAssetsTable.context_kind,
+        context_id: mediaAssetsTable.context_id,
+        media_type: mediaAssetsTable.media_type,
+        mime_type: mediaAssetsTable.mime_type,
+        byte_size: mediaAssetsTable.byte_size,
+        duration_ms: mediaAssetsTable.duration_ms,
+        status: mediaAssetsTable.status,
+        metadata: mediaAssetsTable.metadata,
+      }).from(mediaAssetsTable)
+        .where(inArray(mediaAssetsTable.id, desiredAssetIds))
+        .for("update");
+      const assetsById = new Map(selectedAssets.map((asset) => [asset.id, asset]));
+      desiredAssets = desiredAssetIds.flatMap((assetId) => {
+        const asset = assetsById.get(assetId);
+        return asset ? [asset] : [];
+      });
+      const mediaError = validateListingMediaSet(
+        desiredAssets,
+        desiredAssetIds,
+        req.authenticatedUserId!,
+        currentAssetIdSet,
+        id,
+      );
+      if (mediaError) return { kind: "invalid-media" as const, error: mediaError };
+    }
+
+    const nextTitle = data.title ?? current.title;
+    const nextDescription = data.description ?? current.description;
+    const nextPickupNotes = data.pickup_notes ?? current.pickup_notes ?? "";
+    const moderation = moderatePostText(`${nextTitle}\n${nextDescription}\n${nextPickupNotes}`);
+    const updates = Object.fromEntries(
+      Object.entries(data).filter(([key, value]) => key !== "media_asset_ids" && value !== undefined),
+    ) as Partial<typeof exchangeListingsTable.$inferInsert>;
+    const now = new Date();
+    const [updated] = await tx.update(exchangeListingsTable)
+      .set({
+        ...updates,
+        pickup_notes: data.pickup_notes === undefined ? undefined : data.pickup_notes || null,
+        moderation_status: moderation.status,
+        moderation_reason: moderation.reason,
+        updated_at: now,
+      })
+      .where(and(
+        eq(exchangeListingsTable.id, id),
+        eq(exchangeListingsTable.seller_id, req.authenticatedUserId!),
+        eq(exchangeListingsTable.status, "active"),
+        eq(exchangeListingsTable.moderation_status, current.moderation_status),
+      ))
+      .returning();
+    if (!updated) return { kind: "conflict" as const };
+
+    const removedAssetIds = data.media_asset_ids === undefined
+      ? []
+      : currentAssetIds.filter((assetId) => !desiredAssetIds.includes(assetId));
+    if (data.media_asset_ids !== undefined) {
+      await tx.delete(exchangeListingMediaTable).where(eq(exchangeListingMediaTable.listing_id, id));
+      if (desiredAssetIds.length > 0) {
+        await tx.insert(exchangeListingMediaTable).values(desiredAssetIds.map((assetId, position) => ({
+          listing_id: id,
+          media_asset_id: assetId,
+          position,
+        })));
+      }
+      const addedAssetIds = desiredAssetIds.filter((assetId) => !currentAssetIdSet.has(assetId));
+      if (addedAssetIds.length > 0) {
+        await tx.update(mediaAssetsTable).set({
+          context_kind: "exchange_listing",
+          context_id: id,
+          updated_at: now,
+        }).where(inArray(mediaAssetsTable.id, addedAssetIds));
+      }
+      if (removedAssetIds.length > 0) {
+        await tx.update(mediaAssetsTable).set({
+          status: "deleted",
+          metadata: sql`jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'true'::jsonb, true)`,
+          updated_at: now,
+        }).where(and(
+          inArray(mediaAssetsTable.id, removedAssetIds),
+          eq(mediaAssetsTable.owner_user_id, req.authenticatedUserId!),
+          eq(mediaAssetsTable.context_kind, "exchange_listing"),
+          eq(mediaAssetsTable.context_id, id),
+        ));
+        await tx.update(mediaProcessingJobsTable).set({
+          status: "cancelled",
+          updated_at: now,
+        }).where(and(
+          inArray(mediaProcessingJobsTable.media_asset_id, removedAssetIds),
+          inArray(mediaProcessingJobsTable.status, ["queued", "failed"]),
+        ));
+      }
+    }
+    return { kind: "updated" as const, listing: updated, moderation, removedAssetIds };
+  });
+
+  if (result.kind === "account-unavailable") {
+    return res.status(403).json({ error: "This account is no longer available for Exchange." });
+  }
+  if (result.kind === "not-found") return res.status(404).json({ error: "Listing not found" });
+  if (result.kind === "conflict") {
+    return res.status(409).json({ error: "This listing changed or is no longer available for editing." });
+  }
+  if (result.kind === "media-disabled") {
+    return res.status(503).json({ error: "Photo and video uploads are not available in this environment.", error_code: "MEDIA_PLATFORM_DISABLED" });
+  }
+  if (result.kind === "invalid-media") return res.status(400).json({ error: result.error });
+  const updated = result.listing;
+  const moderation = result.moderation;
+  await cleanupDeletedListingMedia(result.removedAssetIds);
 
   const activeRequests = await db.select({
     id: exchangePickupRequestsTable.id,
@@ -673,7 +1020,7 @@ router.patch("/community/exchange/listings/:id", requireAuth, requireApproved, c
   })));
 
   return res.json({
-    listing: serializeListing(updated as unknown as Record<string, unknown>),
+    listing: await serializeListingWithMedia(updated, req.authenticatedUserId!),
     message: moderation.status === "approved"
       ? "Listing updated."
       : "Listing updated and held for safety review.",

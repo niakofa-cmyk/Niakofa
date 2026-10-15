@@ -5,6 +5,18 @@ export type ExchangeCondition = "new" | "like_new" | "good" | "well_loved";
 export type ExchangePickupLocationType = "public_place" | "community_center" | "library" | "park" | "business_parking" | "other_public";
 export type PickupStatus = "requested" | "accepted" | "declined" | "cancelled" | "expired" | "completed" | "disputed";
 
+export interface ExchangeListingMedia {
+  media_asset_id: number;
+  media_type: "photo" | "video";
+  mime_type: string;
+  status: "processing" | "ready" | "failed";
+  duration_ms: number | null;
+  width: number | null;
+  height: number | null;
+  thumbnail_url: string | null;
+  media_url: string | null;
+}
+
 export interface ExchangeListing {
   id: number;
   seller_id: number;
@@ -21,6 +33,7 @@ export interface ExchangeListing {
   moderation_status: string;
   seller_name?: string | null;
   seller_avatar_url?: string | null;
+  media?: ExchangeListingMedia[];
   created_at: string;
   updated_at: string;
 }

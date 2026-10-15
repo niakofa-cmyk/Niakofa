@@ -645,6 +645,39 @@ async function processCommunityStoryCleanup(): Promise<void> {
     logger.info({ count: staleUploads.length }, "media cleanup: stale pending upload sessions expired");
   }
 
+  const staleExchangeListingDrafts = await db.transaction(async (tx) => {
+    const due = await tx.select({
+      id: mediaAssetsTable.id,
+      original_key: mediaAssetsTable.original_key,
+      thumbnail_key: mediaAssetsTable.thumbnail_key,
+      variant_key: mediaAssetsTable.variant_key,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.context_kind, "exchange_listing_draft"),
+      inArray(mediaAssetsTable.status, ["processing", "ready", "failed"]),
+      lte(mediaAssetsTable.updated_at, staleUploadCutoff),
+    ))
+      .orderBy(mediaAssetsTable.updated_at, mediaAssetsTable.id)
+      .limit(MEDIA_CLEANUP_BATCH_SIZE)
+      .for("update", { skipLocked: true });
+    const expired: typeof due = [];
+    for (const asset of due) {
+      const [tombstone] = await tx.update(mediaAssetsTable).set({
+        status: "deleted",
+        metadata: sql`jsonb_set(jsonb_set(${mediaAssetsTable.metadata}, '{storage_cleanup_pending}', 'true'::jsonb, true), '{stale_exchange_listing_draft_cleanup_pending}', 'true'::jsonb, true)`,
+        updated_at: new Date(),
+      }).where(and(
+        eq(mediaAssetsTable.id, asset.id),
+        eq(mediaAssetsTable.context_kind, "exchange_listing_draft"),
+        inArray(mediaAssetsTable.status, ["processing", "ready", "failed"]),
+      )).returning({ id: mediaAssetsTable.id });
+      if (tombstone) expired.push(asset);
+    }
+    return expired;
+  });
+  if (staleExchangeListingDrafts.length > 0) {
+    logger.info({ count: staleExchangeListingDrafts.length }, "media cleanup: stale Exchange listing drafts expired");
+  }
+
   const tombstoneCleanup = await db.transaction(async (tx) => {
     const tombstones = await tx.select({
       id: mediaAssetsTable.id,
@@ -663,13 +696,32 @@ async function processCommunityStoryCleanup(): Promise<void> {
       .orderBy(mediaAssetsTable.updated_at, mediaAssetsTable.id)
       .limit(MEDIA_CLEANUP_BATCH_SIZE)
       .for("update", { skipLocked: true });
+    const activeProcessing = tombstones.length === 0
+      ? []
+      : await tx.select({ media_asset_id: mediaProcessingJobsTable.media_asset_id })
+        .from(mediaProcessingJobsTable)
+        .where(and(
+          inArray(mediaProcessingJobsTable.media_asset_id, tombstones.map((asset) => asset.id)),
+          eq(mediaProcessingJobsTable.status, "processing"),
+        ));
+    const activeProcessingAssetIds = new Set(activeProcessing.map((job) => job.media_asset_id));
     const failedAssetIds: number[] = [];
     for (const asset of tombstones) {
+      if (activeProcessingAssetIds.has(asset.id)) {
+        await tx.update(mediaAssetsTable).set({ updated_at: new Date() })
+          .where(and(
+            eq(mediaAssetsTable.id, asset.id),
+            eq(mediaAssetsTable.status, "deleted"),
+            sql`${mediaAssetsTable.metadata}->>'storage_cleanup_pending' = 'true'`,
+          ));
+        continue;
+      }
       try {
         const keys = mediaStorageKeys(asset);
         for (const key of keys) await deleteAssetStrict(key);
         if (asset.metadata?.["account_cleanup_pending"] === true
-          || asset.metadata?.["stale_upload_cleanup_pending"] === true) {
+          || asset.metadata?.["stale_upload_cleanup_pending"] === true
+          || asset.metadata?.["stale_exchange_listing_draft_cleanup_pending"] === true) {
           // Account erasure and expired upload sessions remove their database
           // key ledger only after every strict object deletion succeeds.
           await tx.delete(mediaAssetsTable).where(and(

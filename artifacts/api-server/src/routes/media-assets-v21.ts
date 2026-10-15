@@ -75,10 +75,32 @@ async function isApprovedUser(userId: number): Promise<boolean> {
 async function canReadContext(userId: number, contextKind: string, contextId: number): Promise<boolean> {
   if (!(await isApprovedUser(userId))) return false;
 
+  if (contextKind === "exchange_listing_draft") return contextId === userId;
+
   // Staging assets are intentionally not shared with a Community or Hub.
   // They become readable only after the Story create transaction rebinds them
   // to a persisted Story context.
   if (contextKind === "community_moment" || contextKind === "hub_moment") return false;
+
+  if (contextKind === "exchange_listing") {
+    const [listing] = await db.select({
+      seller_id: exchangeListingsTable.seller_id,
+      status: exchangeListingsTable.status,
+      moderation_status: exchangeListingsTable.moderation_status,
+      seller_approval_status: usersTable.approval_status,
+      seller_is_suspended: usersTable.is_suspended,
+    }).from(exchangeListingsTable)
+      .innerJoin(usersTable, eq(usersTable.id, exchangeListingsTable.seller_id))
+      .where(eq(exchangeListingsTable.id, contextId))
+      .limit(1);
+    return Boolean(listing && (
+      listing.seller_id === userId
+      || listing.status === "active"
+        && listing.moderation_status === "approved"
+        && listing.seller_approval_status === "approved"
+        && !listing.seller_is_suspended
+    ));
+  }
 
   if (contextKind === "direct") {
     const [member] = await db.select({ user_id: directConversationMembersTable.user_id })
@@ -239,6 +261,8 @@ async function canReadContext(userId: number, contextKind: string, contextId: nu
 
 async function canWriteContext(userId: number, contextKind: string, contextId: number): Promise<boolean> {
   if (contextKind === "community_moment") return contextId === userId && await isApprovedUser(userId);
+  if (contextKind === "exchange_listing_draft") return contextId === userId && await isApprovedUser(userId);
+  if (contextKind === "exchange_listing") return false;
   if (contextKind === "hub_moment") return canReadContext(userId, "hub", contextId);
   if (contextKind === "story") {
     const [story] = await db.select({
@@ -314,7 +338,7 @@ function disabled(res: Response) {
 }
 
 const uploadRequestSchema = z.object({
-  contextKind: z.enum(["story", "exchange_spark", "direct", "request", "hub", "community_moment", "hub_moment"]),
+  contextKind: z.enum(["story", "exchange_spark", "exchange_listing_draft", "direct", "request", "hub", "community_moment", "hub_moment"]),
   contextId: z.number().int().positive(),
   mediaType: z.enum(["photo", "video", "audio", "document"]),
   mimeType: z.string().trim().max(120).transform(normalizeMediaMimeType).pipe(z.string().min(3).max(120)),
@@ -326,6 +350,19 @@ const uploadRequestSchema = z.object({
     licenseReference: z.string().trim().max(1000).url().optional(),
   }).optional(),
 }).superRefine((input, context) => {
+  if (input.contextKind === "exchange_listing_draft") {
+    const validType = input.mediaType === "photo" || input.mediaType === "video";
+    const validMime = input.mediaType === "photo"
+      ? ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(input.mimeType)
+      : ["video/mp4", "video/webm"].includes(input.mimeType);
+    if (!validType || !validMime) {
+      context.addIssue({
+        code: "custom",
+        path: ["mediaType"],
+        message: "Exchange listing uploads support JPEG, PNG, GIF, or WebP photos and MP4 or WebM videos.",
+      });
+    }
+  }
   if (["community_moment", "hub_moment"].includes(input.contextKind)
     && input.mediaType === "audio" && !input.musicRights) {
     context.addIssue({
@@ -1019,6 +1056,15 @@ router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalA
       return res.status(409).json({ error: "Uploaded object size does not match the declared size.", request_id: requestId });
     }
     const metadata = await validateMediaBuffer(bytes, asset.media_type, asset.mime_type);
+    if (asset.context_kind === "exchange_listing_draft"
+      && asset.media_type === "video"
+      && metadata.duration_ms !== null
+      && metadata.duration_ms > 180_000) {
+      return res.status(422).json({
+        error: "Exchange videos must be 180 seconds or shorter.",
+        error_code: "EXCHANGE_VIDEO_TOO_LONG",
+      });
+    }
     const [validatedAsset] = await db.update(mediaAssetsTable).set({
       width: metadata.width,
       height: metadata.height,
