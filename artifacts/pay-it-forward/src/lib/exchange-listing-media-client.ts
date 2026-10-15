@@ -1,5 +1,5 @@
 import { authHeaders } from "@/lib/auth";
-import { ensureSameOriginMediaPath, uploadBinaryMedia } from "./media-upload-client";
+import { ensureSameOriginMediaPath, uploadResumableMedia } from "./media-upload-client";
 
 export const EXCHANGE_LISTING_MEDIA_MAX_FILES = 6;
 export const EXCHANGE_LISTING_MEDIA_MAX_BYTES = 64 * 1024 * 1024;
@@ -134,7 +134,7 @@ export async function uploadExchangeListingMediaFile(input: {
 
   const session = await apiRequest<{
     media_asset_id: number;
-    upload: { method: string; url: string; headers: Record<string, string> };
+    resumable: { chunk_size: number; status_url: string; chunk_url: string };
     complete_url: string;
   }>("/api/media-assets/uploads", {
     method: "POST",
@@ -150,19 +150,40 @@ export async function uploadExchangeListingMediaFile(input: {
   });
 
   try {
-    await uploadBinaryMedia({
-      upload: session.upload,
-      file,
-      signal,
-      onProgress: (loaded, total) => onProgress?.(Math.round((loaded / Math.max(total, 1)) * 90)),
-      errors: {
-        method: "The media service did not provide a PUT upload.",
-        invalidUrl: "The media service returned an invalid upload URL.",
-        failed: "The media bytes could not be uploaded. Check your connection and retry.",
-        network: "Storage upload failed. Check your connection and retry.",
-        timeout: "Storage upload timed out. You can retry.",
+    if (!Number.isSafeInteger(session.media_asset_id) || session.media_asset_id <= 0
+      || !session.resumable || !Number.isSafeInteger(session.resumable.chunk_size)) {
+      throw new ExchangeListingMediaError("The media service returned an invalid resumable upload session.");
+    }
+    const status = await apiRequest<{
+      media_asset_id: number;
+      offset: number;
+      total_bytes: number;
+      chunk_size: number;
+      finalized: boolean;
+      status: string;
+    }>(ensureSameOriginMediaPath(session.resumable.status_url, (message) => new ExchangeListingMediaError(message)), { signal });
+    if (status.media_asset_id !== session.media_asset_id
+      || status.total_bytes !== file.size
+      || status.chunk_size !== session.resumable.chunk_size
+      || !Number.isSafeInteger(status.offset)
+      || status.offset < 0
+      || status.offset > file.size
+      || status.finalized
+      || status.status !== "pending") {
+      throw new ExchangeListingMediaError("The media service returned an invalid resumable upload status.");
+    }
+    await uploadResumableMedia({
+      upload: {
+        method: "PUT",
+        url: ensureSameOriginMediaPath(session.resumable.chunk_url, (message) => new ExchangeListingMediaError(message)),
+        chunkSize: status.chunk_size,
       },
-      makeError: (message, status) => new ExchangeListingMediaError(message, { status }),
+      file,
+      initialOffset: status.offset,
+      signal,
+      maxRetries: 2,
+      onProgress: (loaded, total) => onProgress?.(Math.round((loaded / Math.max(total, 1)) * 90)),
+      makeError: (message, uploadStatus) => new ExchangeListingMediaError(message, { status: uploadStatus }),
     });
     const completed = await apiRequest<{ media_asset_id: number }>(
       ensureSameOriginMediaPath(session.complete_url, (message) => new ExchangeListingMediaError(message)),

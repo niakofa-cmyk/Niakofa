@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 import { execFileSync, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1184,12 +1184,45 @@ suite("isolated cross-community content and media access matrix", () => {
       expect(Number.isSafeInteger(mediaAssetId)).toBe(true);
       mediaAssetIds.push(mediaAssetId);
 
-      const uploaded = await withMediaPlatformEnabled(() => request(app)
-        .put(`/media-assets/${mediaAssetId}/upload`)
-        .set("Authorization", `Bearer ${authorToken}`)
-        .set("Content-Type", mimeType)
-        .send(bytes));
-      expect(uploaded.status).toBe(204);
+      if (mediaType === "photo") {
+        const status = await withMediaPlatformEnabled(() => request(app)
+          .get(`/media-assets/${mediaAssetId}/upload-session`)
+          .set("Authorization", `Bearer ${authorToken}`));
+        expect(status.status).toBe(200);
+        expect(status.body).toMatchObject({
+          media_asset_id: mediaAssetId,
+          offset: 0,
+          total_bytes: bytes.length,
+          finalized: false,
+          status: "pending",
+        });
+        const chunkSize = Number(status.body.chunk_size);
+        expect(Number.isSafeInteger(chunkSize)).toBe(true);
+        expect(chunkSize).toBeGreaterThan(0);
+        const chunkUrl = `/media-assets/${mediaAssetId}/upload/chunks`;
+        for (let offset = status.body.offset as number; offset < bytes.length;) {
+          const chunk = bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length));
+          const nextOffset = offset + chunk.length;
+          const uploaded = await withMediaPlatformEnabled(() => request(app)
+            .put(chunkUrl)
+            .set("Authorization", `Bearer ${authorToken}`)
+            .set("Content-Type", "application/octet-stream")
+            .set("Upload-Offset", String(offset))
+            .set("X-Chunk-SHA256", createHash("sha256").update(chunk).digest("hex"))
+            .set("X-Media-Mime-Type", mimeType)
+            .send(chunk));
+          expect(uploaded.status).toBe(204);
+          expect(uploaded.headers["upload-offset"]).toBe(String(nextOffset));
+          offset = nextOffset;
+        }
+      } else {
+        const uploaded = await withMediaPlatformEnabled(() => request(app)
+          .put(`/media-assets/${mediaAssetId}/upload`)
+          .set("Authorization", `Bearer ${authorToken}`)
+          .set("Content-Type", mimeType)
+          .send(bytes));
+        expect(uploaded.status).toBe(204);
+      }
       const completed = await withMediaPlatformEnabled(() => request(app)
         .post(`/media-assets/${mediaAssetId}/complete`)
         .set("Authorization", `Bearer ${authorToken}`));
