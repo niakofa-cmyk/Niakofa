@@ -60,7 +60,7 @@ function LocalFilePreview({ file }: { file: File }) {
 
 export function ExchangeListingMediaPreview({ item }: { item: ExchangeListingMedia | undefined }) {
   if (!item) return null;
-  const path = item.status === "ready" ? item.thumbnail_url : null;
+  const path = item.status === "ready" ? item.thumbnail_url ?? (item.media_type === "photo" ? item.media_url : null) : null;
   return (
     <div className="relative mb-3 aspect-[4/3] overflow-hidden rounded-xl bg-muted" aria-label={item.media_type === "video" ? "Listing includes a video" : "Listing includes a photo"}>
       {path
@@ -89,7 +89,7 @@ export function ExchangeListingMediaGallery({ media }: { media: ExchangeListingM
               : item.media_type === "video"
                 ? <ProtectedVideo item={item} />
                 : <ProtectedImage
-                  path={item.thumbnail_url ?? item.media_url}
+                  path={item.media_url ?? item.thumbnail_url}
                   alt="Photo attached to this Exchange post"
                   className="max-h-[420px] w-full bg-black object-contain"
                 />}
@@ -180,8 +180,8 @@ export function ExchangeListingMediaEditor({
           {selectedExisting.map((item) => (
             <li key={item.media_asset_id} className="relative overflow-hidden rounded-xl border border-border bg-background">
               <div className="aspect-square bg-muted">
-                {item.status === "ready" && item.thumbnail_url
-                  ? <ProtectedImage path={item.thumbnail_url} alt="Existing listing media" className="h-full w-full object-cover" />
+                {item.status === "ready" && (item.thumbnail_url || (item.media_type === "photo" && item.media_url))
+                  ? <ProtectedImage path={item.thumbnail_url ?? item.media_url} alt="Existing listing media" className="h-full w-full object-cover" />
                   : <span className="flex h-full items-center justify-center text-xs text-muted-foreground">{item.status === "failed" ? "Processing failed" : "Processing"}</span>}
               </div>
               <button

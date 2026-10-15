@@ -114,8 +114,7 @@
   background: linear-gradient(90deg, var(--nk-teal) 0 72%, var(--nk-coral) 72%);
 }
 .nia-exchange :is(h1, h2, h3, h4) { color: var(--nk-ink); }
-.nia-exchange .text-primary,
-.nia-exchange [class*="text-primary"] { color: var(--nk-teal); }
+.nia-exchange .text-primary { color: hsl(var(--primary)); }
 .nia-exchange [data-testid^="card-listing-"] {
   border-color: color-mix(in srgb, var(--nk-ink) 14%, var(--nk-paper));
   background: color-mix(in srgb, var(--nk-paper) 55%, #fff);
@@ -196,4 +195,24 @@
 }
 .nia-exchange :is(button, a, input, select, textarea):focus-visible {
   outline-color: var(--nk-cyan, #00cfff);
+}
+
+/* Portalled dialogs need the same theme and button contrast as the board. */
+.nia-exchange .text-primary-foreground {
+  color: hsl(var(--primary-foreground));
+}
+.nia-exchange button.bg-primary {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.nia-exchange button.bg-primary:not(:disabled):hover {
+  background-color: hsl(var(--primary) / .9);
+}
+.nia-exchange button:disabled {
+  cursor: not-allowed;
+}
+.nia-exchange-dialog > div.relative {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+  box-shadow: 0 24px 70px hsl(222 31% 12% / .22);
 }

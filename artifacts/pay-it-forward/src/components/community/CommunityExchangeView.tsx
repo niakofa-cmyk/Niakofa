@@ -3,6 +3,8 @@ import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
 import "./community-exchange-view.css";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { useLocation, useSearch } from "wouter";
+import { exchangeListingId, exchangeListingRoute } from "@/lib/exchange-navigation";
 import {
   AlertCircle,
   ArrowLeft,
@@ -209,7 +211,7 @@ function ModalFrame({
             if (opener?.isConnected) opener.focus();
           }}
         >
-          <div className="fixed inset-0 z-[80] overflow-y-auto bg-background/80 p-3 backdrop-blur-sm sm:p-6">
+          <div className="nia-exchange nia-exchange-dialog fixed inset-0 z-[80] overflow-y-auto bg-background/80 p-3 backdrop-blur-sm sm:p-6">
             <button type="button" tabIndex={-1} className="absolute inset-0 h-full w-full cursor-default" aria-label="Close dialog" onClick={onClose} />
             <div className={`relative mx-auto my-4 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl sm:my-8 ${wide ? "max-w-2xl" : "max-w-lg"}`}>
               <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-border bg-card/95 p-5 backdrop-blur sm:p-6">
@@ -316,6 +318,11 @@ async function ensureStagedListingFiles(
 
 export function CommunityExchangeView() {
   const { currentUser } = useAppContext();
+  const [pathname, navigate] = useLocation();
+  const search = useSearch();
+  const selectedId = exchangeListingId(search);
+  const editRequested = new URLSearchParams(search).get("edit") === "1";
+  const setSelectedId = (id: number | null) => navigate(exchangeListingRoute(search, id));
   const initialLocation = readLocation();
   const [location, setLocation] = useState<LocalLocation | null>(initialLocation);
   const [locationOpen, setLocationOpen] = useState(!initialLocation);
@@ -341,10 +348,6 @@ export function CommunityExchangeView() {
   const loadedDetailId = useRef<number | null>(null);
   const feedGeneration = useRef(0);
   const loadedFeedKey = useRef("");
-  const [selectedId, setSelectedId] = useState<number | null>(() => {
-    const value = Number(new URLSearchParams(window.location.search).get("listingId"));
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
-  });
   const [selectedListing, setSelectedListing] = useState<ExchangeListing | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -368,6 +371,7 @@ export function CommunityExchangeView() {
   const [reportForm, setReportForm] = useState<{ type: ExchangeReportType; description: string }>({ type: "other", description: "" });
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editingListing, setEditingListing] = useState<ExchangeListing | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState("");
   const [editMediaIds, setEditMediaIds] = useState<number[]>([]);
@@ -427,6 +431,7 @@ export function CommunityExchangeView() {
   const closeEdit = () => {
     if (editSubmitting) return;
     setEditOpen(false);
+    navigate(exchangeListingRoute(search, selectedId), { replace: true });
     setEditMediaIds([]);
     const staged = editStagedMedia;
     setEditStagedMedia([]);
@@ -453,16 +458,51 @@ export function CommunityExchangeView() {
   }, [editOpen, editStagedMedia]);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (reportOpen) setReportOpen(false);
-      else if (selectedId !== null) setSelectedId(null);
-      else if (postOpen && location) setPostOpen(false);
-      else if (locationOpen && location) setLocationOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [location, locationOpen, postOpen, reportOpen, selectedId]);
+    if (!editRequested) {
+      setEditOpen(false);
+      setEditingListing(null);
+      return;
+    }
+    if (editOpen && editingListing?.id !== selectedId) {
+      setEditOpen(false);
+      setEditingListing(null);
+      return;
+    }
+    if (editOpen || !selectedListing || selectedListing.id !== selectedId || requestsLoading) return;
+    if (selectedListing.seller_id !== currentUser?.id
+      || selectedListing.status !== "active"
+      || selectedListing.moderation_status !== "approved"
+      || requestsError
+      || pickupRequests.some((request) => request.listing_id === selectedId && request.status === "accepted")) {
+      setNotice("This listing is not available for editing.");
+      navigate(exchangeListingRoute(search, selectedId), { replace: true });
+      return;
+    }
+    setEditingListing(selectedListing);
+    setEditError("");
+    setEditMediaIds(selectedListing.media?.map((item) => item.media_asset_id) ?? []);
+    setEditMediaFiles([]);
+    setEditStagedMedia([]);
+    setEditMediaProgress("");
+    setEditForm({
+      listing_type: selectedListing.listing_type,
+      resource_type: selectedListing.resource_type,
+      title: selectedListing.title,
+      description: selectedListing.description,
+      category: selectedListing.category,
+      condition: selectedListing.condition,
+      neighborhood: selectedListing.neighborhood,
+      pickup_location_type: selectedListing.pickup_location_type ?? "public_place",
+      pickup_notes: selectedListing.pickup_notes ?? "",
+    });
+    setEditOpen(true);
+  }, [editRequested, editOpen, editingListing, selectedListing, selectedId, currentUser?.id, requestsLoading, requestsError, pickupRequests, search, navigate]);
+
+  useEffect(() => {
+    const mine = new URLSearchParams(search).get("mine") === "true";
+    setMineOnly(mine);
+    setFeedFilter((current) => mine ? "mine" : current === "mine" ? "all" : current);
+  }, [search]);
 
   useEffect(() => {
     const refresh = () => {
@@ -729,6 +769,7 @@ export function CommunityExchangeView() {
       setPostMediaFiles([]);
       setPostStagedMedia([]);
       setPostMediaProgress("");
+      setSelectedId(result.listing.id);
       setRefreshTick((tick) => tick + 1);
     } catch (error) {
       setPostError(error instanceof Error ? error.message : "Your post could not be shared.");
@@ -757,13 +798,12 @@ export function CommunityExchangeView() {
 
   const submitEdit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!selectedListing && !editForm.title) return;
-    const listingId = selectedListing?.id ?? Number(new URLSearchParams(window.location.search).get("listingId"));
-    if (!Number.isSafeInteger(listingId) || listingId <= 0) return;
+    if (!editingListing) return;
+    const listingId = editingListing.id;
     setEditSubmitting(true);
     setEditError("");
     try {
-      const originalIds = selectedListing?.media?.map((item) => item.media_asset_id) ?? [];
+      const originalIds = editingListing.media?.map((item) => item.media_asset_id) ?? [];
       const mediaChanged = editMediaFiles.length > 0
         || originalIds.length !== editMediaIds.length
         || originalIds.some((mediaId, index) => editMediaIds[index] !== mediaId);
@@ -797,7 +837,9 @@ export function CommunityExchangeView() {
       setEditMediaFiles([]);
       setEditStagedMedia([]);
       setEditMediaProgress("");
-      setSelectedId(null);
+      setSelectedListing(result.listing);
+      setListings((current) => current.map((listing) => listing.id === listingId ? result.listing : listing));
+      navigate(exchangeListingRoute(search, listingId), { replace: true });
       setRefreshTick((tick) => tick + 1);
     } catch (error) {
       setEditError(error instanceof Error ? error.message : "The listing could not be updated.");
@@ -903,7 +945,14 @@ export function CommunityExchangeView() {
               ["needs", "Needs"],
               ["mine", "My posts"],
             ] as const).map(([value, label]) => (
-              <button key={value} type="button" role="tab" aria-selected={feedFilter === value} onClick={() => { setFeedFilter(value); setMineOnly(value === "mine"); }} className={`min-h-9 shrink-0 rounded-lg px-3 text-xs font-bold transition focus:outline-none focus:ring-2 focus:ring-primary ${feedFilter === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`} data-testid={`tab-filter-${value}`}>
+              <button key={value} type="button" role="tab" aria-selected={feedFilter === value} onClick={() => {
+                setFeedFilter(value);
+                setMineOnly(value === "mine");
+                const next = new URLSearchParams(search);
+                if (value === "mine") next.set("mine", "true");
+                else next.delete("mine");
+                navigate(`${pathname}${next.size ? `?${next}` : ""}`, { replace: true });
+              }} className={`min-h-9 shrink-0 rounded-lg px-3 text-xs font-bold transition focus:outline-none focus:ring-2 focus:ring-primary ${feedFilter === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`} data-testid={`tab-filter-${value}`}>
                 {label}
               </button>
             ))}
@@ -930,22 +979,7 @@ export function CommunityExchangeView() {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2" data-testid="listings-grid">
-            {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} onRenew={mineOnly ? renewListing : undefined} onEdit={mineOnly && !requestsLoading && !pickupRequests.some((request) => request.listing_id === listing.id && request.status === "accepted") ? (item) => {
-              setSelectedListing(item);
-              setEditError("");
-              setEditForm({
-                listing_type: item.listing_type,
-                resource_type: item.resource_type,
-                title: item.title,
-                description: item.description,
-                category: item.category,
-                condition: item.condition,
-                neighborhood: item.neighborhood,
-                pickup_location_type: item.pickup_location_type ?? "public_place",
-                pickup_notes: item.pickup_notes ?? "",
-              });
-              setEditOpen(true);
-            } : undefined} />)}
+            {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} onRenew={mineOnly ? renewListing : undefined} onEdit={mineOnly && listing.moderation_status === "approved" && !requestsLoading && !requestsError && !pickupRequests.some((request) => request.listing_id === listing.id && request.status === "accepted") ? (item) => navigate(exchangeListingRoute(search, item.id, true)) : undefined} />)}
           </div>
           {nextCursor && (
             <button
@@ -984,7 +1018,7 @@ export function CommunityExchangeView() {
                        const recipientId = currentUser.id === request.buyer_id ? request.seller_id : request.buyer_id;
                        if (!recipientId) return;
                        const params = new URLSearchParams({ mode: "direct", recipientId: String(recipientId), exchangeListingId: String(request.listing_id), exchangePickupRequestId: String(request.id) });
-                       window.location.assign(`/messages?${params.toString()}`);
+                       navigate(`/messages?${params.toString()}`);
                      }} className="min-h-8 rounded-lg border border-primary/40 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-open-exchange-messages-${request.id}`}><MessageSquare className="mr-1 inline h-3.5 w-3.5" /> Open Messages</button>
                    ) : null}
                    <span className="text-xs text-muted-foreground">Manage pickup actions in the Exchange panel in Messages.</span>
@@ -1083,7 +1117,7 @@ export function CommunityExchangeView() {
              <div className="space-y-2"><FieldLabel htmlFor="edit-pickup-notes">Public pickup notes (optional)</FieldLabel><textarea id="edit-pickup-notes" maxLength={500} rows={3} value={editForm.pickup_notes} onChange={(event) => setEditForm((current) => ({ ...current, pickup_notes: event.target.value }))} className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm" data-testid="input-edit-pickup-notes" /></div>
               <ExchangeListingMediaEditor
                 idPrefix="edit"
-                existingMedia={selectedListing?.media ?? []}
+                existingMedia={editingListing?.media ?? []}
                 selectedMediaIds={editMediaIds}
                 onSelectedMediaIdsChange={setEditMediaIds}
                 files={editMediaFiles}
@@ -1092,12 +1126,12 @@ export function CommunityExchangeView() {
                 progress={editMediaProgress}
               />
              {editError && <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert" data-testid="error-edit-listing">{editError}</p>}
-             <div className="flex justify-end gap-2 border-t border-border pt-4"><button type="button" onClick={() => setEditOpen(false)} className="min-h-10 rounded-xl border border-border px-4 py-2 text-sm font-bold hover:bg-muted">Cancel</button><button type="submit" disabled={editSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:opacity-60" data-testid="button-save-edit-listing">{editSubmitting && <Loader2 className="h-4 w-4 animate-spin" />} Save changes</button></div>
+             <div className="flex justify-end gap-2 border-t border-border pt-4"><button type="button" disabled={editSubmitting} onClick={closeEdit} className="min-h-10 rounded-xl border border-border px-4 py-2 text-sm font-bold hover:bg-muted disabled:opacity-60">Cancel</button><button type="submit" disabled={editSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:opacity-60" data-testid="button-save-edit-listing">{editSubmitting && <Loader2 className="h-4 w-4 animate-spin" />} Save changes</button></div>
            </form>
          </ModalFrame>
        )}
 
-      {selectedId !== null && (
+      {selectedId !== null && !editOpen && (
         <ModalFrame title={selectedListing?.title || "Listing details"} eyebrow="Community post" onClose={() => setSelectedId(null)} wide>
             {!detailLoading && !detailError && selectedListing?.id === selectedId && <ExchangeListingMediaGallery media={selectedListing.media} />}
            {selectedListing?.seller_id === currentUser?.id && selectedListing?.status === "active" && <button
@@ -1106,25 +1140,7 @@ export function CommunityExchangeView() {
              className="mb-4 inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-sm font-bold text-muted-foreground hover:text-destructive disabled:opacity-60"
              data-testid="button-withdraw-listing"
            >{withdrawSubmitting ? "Withdrawing…" : "Withdraw listing"}</button>}
-           {selectedListing && selectedListing.seller_id === currentUser?.id && selectedListing.status === "active" && !requestsLoading && !pickupRequests.some((request) => request.listing_id === selectedListing.id && request.status === "accepted") && <button type="button" onClick={() => {
-             setEditError("");
-              setEditMediaIds(selectedListing.media?.map((item) => item.media_asset_id) ?? []);
-              setEditMediaFiles([]);
-              setEditStagedMedia([]);
-              setEditMediaProgress("");
-             setEditForm({
-               listing_type: selectedListing.listing_type,
-               resource_type: selectedListing.resource_type,
-               title: selectedListing.title,
-               description: selectedListing.description,
-               category: selectedListing.category,
-               condition: selectedListing.condition,
-               neighborhood: selectedListing.neighborhood,
-               pickup_location_type: selectedListing.pickup_location_type ?? "public_place",
-               pickup_notes: selectedListing.pickup_notes ?? "",
-             });
-             setEditOpen(true);
-           }} className="mb-4 inline-flex min-h-9 items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-edit-listing-detail-${selectedListing.id}`}><Tag className="h-3.5 w-3.5" /> Edit this post</button>}
+           {selectedListing && selectedListing.seller_id === currentUser?.id && selectedListing.status === "active" && selectedListing.moderation_status === "approved" && !requestsLoading && !requestsError && !pickupRequests.some((request) => request.listing_id === selectedListing.id && request.status === "accepted") && <button type="button" onClick={() => navigate(exchangeListingRoute(search, selectedListing.id, true))} className="mb-4 inline-flex min-h-9 items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-edit-listing-detail-${selectedListing.id}`}><Tag className="h-3.5 w-3.5" /> Edit this post</button>}
            {selectedListing && selectedListing.seller_id === currentUser?.id && (selectedListing.status === "held" || pickupRequests.some((request) => request.listing_id === selectedListing.id && request.status === "accepted")) && <p className="mb-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">Editing is available only while the listing is active. It stops after a pickup request is accepted or the listing is held for review.</p>}
            {selectedListing?.status === "active" && selectedListing.seller_id !== currentUser?.id && <div className="mb-4 grid gap-3 rounded-xl border border-border bg-background/50 p-3 sm:grid-cols-2">
              <div className="space-y-2"><FieldLabel htmlFor="request-pickup-location-type">Public pickup location type</FieldLabel><select id="request-pickup-location-type" required value={requestForm.pickup_location_type} onChange={(event) => setRequestForm((current) => ({ ...current, pickup_location_type: event.target.value as ExchangePickupLocationType }))} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" data-testid="select-request-pickup-location-type">{pickupLocationTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
