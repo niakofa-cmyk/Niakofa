@@ -21,6 +21,7 @@ export type StudioState = {
 };
 
 export type StudioAction =
+  | { type: "text" }
   | { type: "add"; items: StudioItem[]; goReview?: boolean }
   | { type: "remove"; id: string }
   | { type: "move"; id: string; to: number }
@@ -52,6 +53,8 @@ export const initialStudioState = (mode: StudioMode = "capture"): StudioState =>
 
 export function studioReducer(state: StudioState, action: StudioAction): StudioState {
   switch (action.type) {
+    case "text":
+      return { ...state, mode: "review", error: "" };
     case "add": {
       const room = STUDIO_MAX_ITEMS - state.items.length;
       if (room <= 0) return { ...state, error: `Up to ${STUDIO_MAX_ITEMS} items per Moment.` };

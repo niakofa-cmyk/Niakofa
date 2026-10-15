@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Circle, Flashlight, ImagePlus, Loader2, Captions, Plus, ShieldCheck, Scissors, SwitchCamera, Trash2, Type, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { initialStudioState, studioReducer } from "./studio-machine";
 import { formatClock, itemFromFile, trimmedItem, untrimmedItem } from "./studio-media";
 import { DescribePanel } from "./DescribePanel";
@@ -71,6 +72,8 @@ export function MediaStudio(props: MediaStudioProps) {
   const capture = useCaptureSession();
   const urlFor = useObjectUrls(state.items);
   const galleryRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const archiveIdRef = useRef(`studio-${Date.now().toString(36)}`);
   const [captureKind, setCaptureKind] = useState<"video" | "photo">("video");
@@ -184,16 +187,43 @@ export function MediaStudio(props: MediaStudioProps) {
     if (state.mode === "publishing") { abortRef.current?.abort(); dispatch({ type: "fail", message: "Upload cancelled. Nothing was posted." }); return; }
     if (state.mode === "publish") { dispatch({ type: "mode", mode: "review" }); return; }
     if (state.mode === "review") { dispatch({ type: "mode", mode: "capture" }); return; }
-    if (state.items.length) { setConfirmDiscard(true); return; }
+    if (state.items.length || state.caption.trim()) { setConfirmDiscard(true); return; }
     onClose();
-  }, [onClose, state.items.length, state.mode]);
+  }, [onClose, state.items.length, state.caption, state.mode]);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); back(); } };
+    const previousFocus = document.activeElement;
+    dialogRef.current?.focus();
+    return () => { if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus(); };
+  }, [open]);
+
+  useEffect(() => {
+    if (open && state.mode === "review" && !state.items.length) textRef.current?.focus();
+  }, [open, state.mode, state.items.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (confirmDiscard) setConfirmDiscard(false);
+        else if (describing) setDescribing(false);
+        else if (trimming) setTrimming(false);
+        else back();
+      }
+      if (event.key !== "Tab") return;
+      const root = confirmDiscard ? dialogRef.current?.querySelector<HTMLElement>('[role="alertdialog"]') : dialogRef.current;
+      const controls = Array.from(root?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])') ?? [])
+        .filter((element) => element.getClientRects().length > 0);
+      if (!controls.length) return;
+      const index = controls.indexOf(document.activeElement as HTMLElement);
+      if (event.shiftKey && index <= 0) { event.preventDefault(); controls[controls.length - 1]?.focus(); }
+      else if (!event.shiftKey && (index === -1 || index === controls.length - 1)) { event.preventDefault(); controls[0]?.focus(); }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, back]);
+  }, [open, back, confirmDiscard, describing, trimming]);
 
   const addFiles = async (files: File[], source: StudioItem["source"], measuredMs?: number) => {
     setAdding(true);
@@ -281,8 +311,8 @@ export function MediaStudio(props: MediaStudioProps) {
   const recording = capture.status === "recording";
   const clipPct = Math.min(100, (capture.elapsedMs / Math.max(1, budgetMs)) * 100);
 
-  return (
-    <div className="nk-studio" role="dialog" aria-modal="true" aria-label="Media Studio" data-mode={state.mode} data-testid="media-studio">
+  return createPortal(
+    <div ref={dialogRef} tabIndex={-1} className="nk-studio" role="dialog" aria-modal="true" aria-label="Media Studio" data-mode={state.mode} data-testid="media-studio">
       {/* Layer 0: the live camera stays mounted for the whole session; every other layer slides over it. */}
       <video ref={capture.videoRef} className={`nk-studio__camera${mirrored ? " is-mirrored" : ""}`} muted playsInline aria-hidden="true" />
       {capture.status === "starting" && state.mode === "capture" && <div className="nk-studio__center" role="status"><Loader2 className="h-7 w-7 animate-spin" aria-hidden="true" /><span>Starting camera…</span></div>}
@@ -322,7 +352,7 @@ export function MediaStudio(props: MediaStudioProps) {
                 <div className="nk-studio__modes" role="radiogroup" aria-label="Capture mode">
                   <button type="button" role="radio" aria-checked={captureKind === "video"} className={captureKind === "video" ? "is-on" : ""} onClick={() => setCaptureKind("video")}><Video className="h-4 w-4" /> Video</button>
                   <button type="button" role="radio" aria-checked={captureKind === "photo"} className={captureKind === "photo" ? "is-on" : ""} onClick={() => setCaptureKind("photo")}><Camera className="h-4 w-4" /> Photo</button>
-                  {!props.responseToStoryId && <button type="button" onClick={() => dispatch({ type: "mode", mode: "review" })}><Type className="h-4 w-4" /> Text</button>}
+                  {!props.responseToStoryId && <button type="button" onClick={() => dispatch({ type: "text" })}><Type className="h-4 w-4" /> Text</button>}
                 </div>
               )}
               <div className="nk-studio__controls">
@@ -350,7 +380,7 @@ export function MediaStudio(props: MediaStudioProps) {
               {active ? (active.kind === "photo"
                 ? <img key={active.id} src={urlFor(active)} alt="Selected photo" />
                 : <video key={active.id} ref={stageVideoRef} src={urlFor(active)} autoPlay={!trimming} loop playsInline muted controls={false} aria-label="Selected video" />)
-                : <textarea className="nk-studio__textcard" value={state.caption} onChange={(e) => dispatch({ type: "caption", caption: e.target.value })} placeholder="Write something…" aria-label="Write your Moment" maxLength={2200} />}
+                : <textarea ref={textRef} className="nk-studio__textcard" value={state.caption} onChange={(e) => dispatch({ type: "caption", caption: e.target.value })} placeholder="Write something…" aria-label="Write your Moment" maxLength={2200} />}
             </div>
             <header className="nk-studio__top">
               <button type="button" className="nk-studio__icon" onClick={back} aria-label="Back to camera"><ArrowLeft className="h-5 w-5" /></button>
@@ -492,11 +522,12 @@ export function MediaStudio(props: MediaStudioProps) {
 
       {confirmDiscard && (
         <div className="nk-studio__scrim" role="alertdialog" aria-label="Discard your work?">
-          <div className="nk-studio__card"><p>Discard {state.items.length} item{state.items.length === 1 ? "" : "s"}?</p>
+          <div className="nk-studio__card"><p>Discard your {state.items.length ? `${state.items.length} item${state.items.length === 1 ? "" : "s"} and unsaved changes` : "unsaved text"}?</p>
             <div className="nk-studio__row"><button type="button" className="nk-studio__pill" onClick={() => setConfirmDiscard(false)}>Keep editing</button><button type="button" className="nk-studio__pill is-danger" onClick={() => { setConfirmDiscard(false); onClose(); }}>Discard</button></div></div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

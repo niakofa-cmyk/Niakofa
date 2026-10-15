@@ -324,6 +324,7 @@ export function CommunityMomentsExperience({
     fullScreenToggleRef.current?.focus();
     const focusableSelector = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])";
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[data-testid="media-studio"]')) return;
       if (fullScreenOverlayOpen) return;
       if (event.key === "Escape") {
         event.preventDefault();

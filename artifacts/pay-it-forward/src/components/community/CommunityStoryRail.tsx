@@ -151,7 +151,18 @@ export function CommunityStoryRail({
   const familyStoryOriginalArchivedRef = useRef(false);
   const preserveFamilyStoryArchiveOnTrimRef = useRef(false);
   const [checkingStudioDuration, setCheckingStudioDuration] = useState(false);
+  const previousComposerSignalRef = useRef(0);
   useEffect(() => {
+    const routeSignal = openComposerSignal ?? 0;
+    const leftComposerRoute = previousComposerSignalRef.current > 0 && routeSignal === 0;
+    previousComposerSignalRef.current = routeSignal;
+    if (leftComposerRoute) {
+      publishControllerRef.current?.abort();
+      setComposerOpen(false);
+      setCameraOpen(false);
+      setGalleryOpen(false);
+      return;
+    }
     // The page-level signal starts at 0, so a positive value is always an
     // explicit Create → Story action. This also works when the rail is
     // mounted after switching from another Community tab.
@@ -1028,6 +1039,9 @@ export function CommunityStoryRail({
     if (!composerOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    // MediaStudio owns focus and keyboard navigation. The legacy handler depends
+    // on caption changes and would refocus the first button after every keystroke.
+    if (studioV2) return () => { document.body.style.overflow = previousOverflow; };
     const dialog = document.querySelector<HTMLElement>(cameraOpen
       ? '[data-testid="dialog-spark-camera"]'
       : galleryOpen ? ".nia-story-gallery" : ".nia-story-composer");
@@ -1047,7 +1061,7 @@ export function CommunityStoryRail({
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
-    dialog?.querySelector<HTMLElement>("button")?.focus();
+    if (dialog && !dialog.contains(document.activeElement)) dialog.querySelector<HTMLElement>("button")?.focus();
     window.addEventListener("keydown", onKey);
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKey); };
   }, [composerOpen, cameraOpen, galleryOpen, studioStep, draftReady, cancelCamera, closeComposer, studioV2]);
@@ -1879,12 +1893,13 @@ export function CommunityStoryRail({
               draftGenerationRef.current++;
               if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
               await draftQueueRef.current.catch(reportClientSideEffectFailure("community.story-studio.draft-flush"));
-              await discardStudioDraft(userId, hubId);
+              // A local cleanup failure must not hide a successfully published Moment.
+              await discardStudioDraft(userId, hubId).catch(reportClientSideEffectFailure("community.story-studio.draft-discard"));
               resetComposer();
               setComposerOpen(false);
               window.dispatchEvent(new Event("community-moments-refresh"));
               if (result.kind === "moment") navigate(buildMomentsSparkHref(result.storyId, audience, hubId));
-              else if (result.kind === "exchange_spark") navigate("/community?tab=exchange");
+              else if (result.kind === "exchange_spark") navigate(`/community/exchange${exchangeListingId ? `?listingId=${encodeURIComponent(exchangeListingId)}` : ""}`);
               else if (familyStoryFamilyId) navigate(`/family/${familyStoryFamilyId}`);
             })().catch(reportClientSideEffectFailure("community.story-studio.publish-cleanup"));
           }}

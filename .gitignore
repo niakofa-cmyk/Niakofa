@@ -82,3 +82,6 @@ attached_assets/
 main.py
 pyproject.toml
 uv.lock
+
+# Generated local verification media and browser evidence.
+/generated-artifacts/

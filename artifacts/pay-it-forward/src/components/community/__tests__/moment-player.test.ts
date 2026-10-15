@@ -55,6 +55,20 @@ test("resolver: a clip grant is POSTed to its own media path and the same-origin
   assert.equal(calls[0][1]?.credentials, "same-origin");
 });
 
+test("resolver: native fetch keeps its global receiver for clips and camera reels", async () => {
+  const receivers: unknown[] = [];
+  const fetchFn = (async function (this: unknown, input: string | URL | Request) {
+    receivers.push(this);
+    assert.equal(this, globalThis, "fetch must not receive the dependency object as this");
+    return jsonResponse({ playback_url: String(input).replace(/playback-grant$/, "play") });
+  }) as typeof fetch;
+  await resolveMomentVideoUrl(3, { id: 7, media_url: "/api/community/stories/media/7" }, deps(fetchFn));
+  await resolveMomentVideoUrl(3, {
+    id: 3, media_url: "/api/community/stories/3/moment-composition/playback-grant", isMomentReel: true,
+  }, deps(fetchFn));
+  assert.equal(receivers.length, 2);
+});
+
 test("resolver: refuses mismatched ids, foreign origins and token-bearing playback URLs without trusting the server", async () => {
   const never = (async () => { throw new Error("must not fetch"); }) as unknown as typeof fetch;
   await assert.rejects(resolveMomentVideoUrl(3, { id: 8, media_url: "/api/community/stories/media/7" }, deps(never)), /valid authenticated media reference/);

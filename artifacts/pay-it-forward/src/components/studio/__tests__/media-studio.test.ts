@@ -68,10 +68,15 @@ test("item cap, selection, reorder, delete-last returns to the live camera", () 
   assert.equal(s.activeId, null);
 });
 
-test("cannot enter review/publish with nothing; text-only is allowed once there is a caption", () => {
+test("Text opens an empty editable review, but an empty Moment cannot be published", () => {
   assert.equal(run(initialStudioState(), { type: "mode", mode: "review" }).mode, "capture");
+  const text = run(initialStudioState(), { type: "text" });
+  assert.equal(text.mode, "review");
+  assert.equal(text.caption, "");
+  assert.equal(run(text, { type: "mode", mode: "publish" }).mode, "review");
   const s = run(initialStudioState(), { type: "caption", caption: "hello" }, { type: "mode", mode: "review" });
   assert.equal(s.mode, "review");
+  assert.equal(run(s, { type: "mode", mode: "publish" }).mode, "publish");
 });
 
 test("a failed publish returns to the sheet with items and caption intact", () => {

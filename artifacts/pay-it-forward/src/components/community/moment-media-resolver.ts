@@ -16,6 +16,9 @@ export type VideoResolverDeps = {
  * prefetch of the NEXT card cannot drift apart.
  */
 export async function resolveMomentVideoUrl(sparkId: number, media: VideoReference, deps: VideoResolverDeps): Promise<string> {
+  // Native Window.fetch cannot be invoked as a method of the dependency bag.
+  // Bind its browser receiver for both active playback and prefetched grants.
+  const fetchFn = deps.fetchFn.bind(globalThis);
   const reference = new URL(media.media_url, deps.origin);
   if (media.isMomentReel) {
     const expectedGrant = `/api/community/stories/${sparkId}/moment-composition/playback-grant`;
@@ -23,7 +26,7 @@ export async function resolveMomentVideoUrl(sparkId: number, media: VideoReferen
       || reference.search || reference.hash || reference.username || reference.password) {
       throw new Error("This Spark does not have a valid camera reel playback grant.");
     }
-    const grantResponse = await deps.fetchFn(reference.pathname, { method: "POST", headers: deps.headers(), credentials: "same-origin", signal: deps.signal });
+    const grantResponse = await fetchFn(reference.pathname, { method: "POST", headers: deps.headers(), credentials: "same-origin", signal: deps.signal });
     const grant = await grantResponse.json().catch(() => ({})) as { playback_url?: string; error?: string };
     if (!grantResponse.ok || typeof grant.playback_url !== "string") {
       throw new Error(grant.error || "Secure camera reel playback could not be opened.");
@@ -36,7 +39,7 @@ export async function resolveMomentVideoUrl(sparkId: number, media: VideoReferen
     || reference.username || reference.password || !Number.isSafeInteger(mediaId) || mediaId !== media.id) {
     throw new Error("This Spark does not have a valid authenticated media reference.");
   }
-  const response = await deps.fetchFn(`${reference.pathname.replace(/\/$/, "")}/playback-grant`, { method: "POST", headers: deps.headers(), credentials: "same-origin", signal: deps.signal });
+  const response = await fetchFn(`${reference.pathname.replace(/\/$/, "")}/playback-grant`, { method: "POST", headers: deps.headers(), credentials: "same-origin", signal: deps.signal });
   const payload = await response.json().catch(() => ({})) as { playback_url?: string; error?: string };
   if (!response.ok) throw new Error(payload.error || "Secure Spark playback could not be opened.");
   if (typeof payload.playback_url !== "string" || !payload.playback_url) {
