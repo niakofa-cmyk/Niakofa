@@ -28,7 +28,7 @@ type FixtureListing = {
   neighborhood: string;
   pickup_location_type: "library";
   pickup_notes: string;
-  status: "active";
+  status: "active" | "withdrawn";
   moderation_status: "approved";
   created_at: string;
   updated_at: string;
@@ -184,7 +184,10 @@ test.describe("Exchange Spark Studio browser publishing (local fixture)", () => 
         if (pathname === `/api/media-assets/${assetId}/play` && method === "GET") {
           const cookie = request.headers().cookie ?? "";
           const asset = fixture.assets.get(assetId);
-          if (!asset?.storagePath || !cookie.includes(`spark-fixture-grant=${user.id}`)) {
+          const spark = asset ? fixture.sparks.get(asset.sparkId) : undefined;
+          const linkedListing = spark ? fixture.listings.get(spark.listingId) : undefined;
+          if (!asset?.storagePath || !cookie.includes(`spark-fixture-grant=${user.id}`)
+            || spark?.status !== "published" || linkedListing?.status !== "active") {
             await fulfillJson(route, 404, { error: "Spark video not found." });
             return;
           }
@@ -271,8 +274,25 @@ test.describe("Exchange Spark Studio browser publishing (local fixture)", () => 
           await fulfillJson(route, 200, { listings: [...fixture.listings.values()], next_cursor: null });
           return;
         }
+        const withdrawListingMatch = pathname.match(/^\/api\/community\/exchange\/listings\/(\d+)\/withdraw$/);
+        if (method === "POST" && withdrawListingMatch) {
+          const linkedListing = fixture.listings.get(Number(withdrawListingMatch[1]));
+          if (actor.id !== owner.id || !linkedListing) {
+            await fulfillJson(route, 404, { error: "Listing not found." });
+            return;
+          }
+          if (linkedListing.status !== "active") {
+            await fulfillJson(route, 409, { error: "This listing is no longer active." });
+            return;
+          }
+          linkedListing.status = "withdrawn";
+          await fulfillJson(route, 200, { listing: linkedListing });
+          return;
+        }
         if (method === "GET" && pathname === "/api/community/exchange/sparks") {
-          const published = [...fixture.sparks.values()].find((spark) => spark.status === "published");
+          const published = [...fixture.sparks.values()].find((spark) =>
+            spark.status === "published" && fixture.listings.get(spark.listingId)?.status === "active",
+          );
           const publishedAsset = published?.assetId ? fixture.assets.get(published.assetId) : undefined;
           const sparks = published && publishedAsset?.status === "ready"
             ? [{
@@ -432,8 +452,15 @@ test.describe("Exchange Spark Studio browser publishing (local fixture)", () => 
             await fulfillJson(route, 200, { media_asset_id: asset.id, status: "ready" });
             return;
           }
-          if (method === "POST" && assetMatch[2] === "playback-grant"
-            && fixture.sparks.get(sparkId)?.status === "published" && asset.status === "ready") {
+          if (method === "POST" && assetMatch[2] === "playback-grant") {
+            const spark = fixture.sparks.get(asset.sparkId);
+            const linkedListing = spark ? fixture.listings.get(spark.listingId) : undefined;
+            if ((actor.id !== owner.id && actor.id !== viewer.id)
+              || spark?.status !== "published" || linkedListing?.status !== "active"
+              || asset.status !== "ready") {
+              await fulfillJson(route, 404, { error: "Spark video not found." });
+              return;
+            }
             fixture.viewerPlaybackGrants.add(actor.id);
             await context.addCookies([{
               name: "spark-fixture-grant",
@@ -656,6 +683,37 @@ test.describe("Exchange Spark Studio browser publishing (local fixture)", () => 
         .toBeGreaterThan(0.05);
       expect(fixture.viewerPlaybackGrants.has(viewer.id)).toBe(true);
 
+      const withdrawResponse = await ownerPage.evaluate(async (id) => {
+        const token = localStorage.getItem("niakofa_token") ?? "";
+        const response = await fetch(`/api/community/exchange/listings/${id}/withdraw`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "same-origin",
+        });
+        return response.status;
+      }, listing.id);
+      expect(withdrawResponse).toBe(200);
+      expect(listing.status).toBe("withdrawn");
+
+      await viewerPage.reload();
+      await expect(viewerPage.getByText("No nearby Exchange videos yet")).toBeVisible();
+      await expect(viewerPage.getByTestId(`card-exchange-spark-${sparkId}`)).toHaveCount(0);
+      const deniedNewGrant = await viewerPage.evaluate(async (id) => {
+        const token = localStorage.getItem("niakofa_token") ?? "";
+        const response = await fetch(`/api/media-assets/${id}/playback-grant`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "same-origin",
+        });
+        return response.status;
+      }, assetId);
+      expect(deniedNewGrant).toBe(404);
+      const deniedExistingGrant = await viewerPage.evaluate(async (id) => {
+        const response = await fetch(`/api/media-assets/${id}/play`, { credentials: "same-origin" });
+        return response.status;
+      }, assetId);
+      expect(deniedExistingGrant).toBe(404);
+
       const deleteResponse = await ownerPage.evaluate(async (id) => {
         const token = localStorage.getItem("niakofa_token") ?? "";
         const response = await fetch(`/api/community/exchange/sparks/${id}`, {
@@ -675,14 +733,9 @@ test.describe("Exchange Spark Studio browser publishing (local fixture)", () => 
       await viewerPage.goto(`${baseURL}/community?tab=exchange`);
       await expect(viewerPage.getByText("No nearby Exchange videos yet")).toBeVisible();
       await expect(viewerPage.getByTestId(`card-exchange-spark-${sparkId}`)).toHaveCount(0);
-      const deniedPlayback = await viewerPage.evaluate(async (id) => {
-        const response = await fetch(`/api/media-assets/${id}/play`, { credentials: "same-origin" });
-        return response.status;
-      }, assetId);
-      expect(deniedPlayback).toBe(404);
 
       await testInfo.attach("exchange-spark-studio-browser.txt", {
-        body: `local-preview=true; approved-fixtures=2; listing=${listing.id}; spark=${sparkId}; asset=${assetId}; uploaded-bytes=${syntheticVideoBytes.byteLength}; loopback-upload-requests=${fixture.uploadRequests}; viewer-played=true; deleted=true; storage-file-present=${await fileExists(uploadPath)}`,
+        body: `local-preview=true; approved-fixtures=2; listing=${listing.id}; spark=${sparkId}; asset=${assetId}; uploaded-bytes=${syntheticVideoBytes.byteLength}; loopback-upload-requests=${fixture.uploadRequests}; viewer-played=true; listing-withdrawn=true; new-grant-denied=${deniedNewGrant}; existing-grant-revoked=${deniedExistingGrant}; deleted=true; storage-file-present=${await fileExists(uploadPath)}`,
         contentType: "text/plain",
       });
       fixture.listings.clear();

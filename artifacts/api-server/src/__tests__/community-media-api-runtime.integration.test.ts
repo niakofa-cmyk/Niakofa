@@ -584,6 +584,11 @@ suite("isolated cross-community content and media access matrix", () => {
       [exchangeListingId, authorId, authorCommunityId],
     );
     sparkId = sparks[0].id;
+    const sparkVideoBytes = await createSyntheticVideo();
+    const sparkVariantKey = `runtime-fixture/${randomUUID()}.variant.mp4`;
+    const sparkVariantPath = path.resolve(UPLOADS_BASE, sparkVariantKey);
+    await mkdir(path.dirname(sparkVariantPath), { recursive: true });
+    await writeFile(sparkVariantPath, sparkVideoBytes);
     const { rows: sparkAssets } = await pool.query(
       `INSERT INTO media_assets
          (owner_user_id, context_kind, context_id, media_type, mime_type, original_key,
@@ -595,7 +600,7 @@ suite("isolated cross-community content and media access matrix", () => {
         authorId,
         sparkId,
         `runtime-fixture/no-object/${randomUUID()}.mp4`,
-        `runtime-fixture/no-object/${randomUUID()}.variant.mp4`,
+        sparkVariantKey,
       ],
     );
     const sparkMediaAssetId = sparkAssets[0].id as number;
@@ -622,6 +627,59 @@ suite("isolated cross-community content and media access matrix", () => {
       .set("Authorization", `Bearer ${readerToken}`);
     expect(readerSparks.status).toBe(200);
     expect(readerSparks.body.sparks.some((spark: { spark_id: number }) => spark.spark_id === sparkId)).toBe(false);
+
+    const sameCommunitySparks = await request(app)
+      .get("/community/exchange/sparks")
+      .set("Authorization", `Bearer ${sameCommunityReaderToken}`);
+    expect(sameCommunitySparks.status).toBe(200);
+    expect(sameCommunitySparks.body.sparks.some((spark: { spark_id: number }) => spark.spark_id === sparkId)).toBe(true);
+
+    const sparkGrant = await withMediaPlatformEnabled(() => request(app)
+      .post(`/media-assets/${sparkMediaAssetId}/playback-grant`)
+      .set("Authorization", `Bearer ${sameCommunityReaderToken}`));
+    expect(sparkGrant.status).toBe(200);
+    const sparkGrantSetCookie = sparkGrant.headers["set-cookie"];
+    const sparkPlaybackCookie = (Array.isArray(sparkGrantSetCookie) ? sparkGrantSetCookie[0] : sparkGrantSetCookie)
+      ?.split(";")[0];
+    expect(sparkPlaybackCookie).toBeTruthy();
+    if (!sparkPlaybackCookie) throw new Error("The Exchange Spark playback grant did not set its cookie.");
+
+    const playableBeforeWithdrawal = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/${sparkMediaAssetId}/play`)
+      .set("Cookie", sparkPlaybackCookie));
+    expect(playableBeforeWithdrawal.status).toBe(200);
+    expect(playableBeforeWithdrawal.headers["content-type"]).toMatch(/video\/mp4/i);
+    expect(Number(playableBeforeWithdrawal.headers["content-length"])).toBe(sparkVideoBytes.byteLength);
+
+    const withdrawnListing = await request(app)
+      .post(`/community/exchange/listings/${exchangeListingId}/withdraw`)
+      .set("Authorization", `Bearer ${authorToken}`);
+    expect(withdrawnListing.status).toBe(200);
+    expect(withdrawnListing.body.listing.status).toBe("withdrawn");
+
+    const [withdrawnAuthorFeed, withdrawnNeighborFeed] = await Promise.all([
+      request(app).get("/community/exchange/sparks").set("Authorization", `Bearer ${authorToken}`),
+      request(app).get("/community/exchange/sparks").set("Authorization", `Bearer ${sameCommunityReaderToken}`),
+    ]);
+    for (const feed of [withdrawnAuthorFeed, withdrawnNeighborFeed]) {
+      expect(feed.status).toBe(200);
+      expect(feed.body.sparks.some((spark: { spark_id: number }) => spark.spark_id === sparkId)).toBe(false);
+    }
+
+    const deniedSparkGrant = await withMediaPlatformEnabled(() => request(app)
+      .post(`/media-assets/${sparkMediaAssetId}/playback-grant`)
+      .set("Authorization", `Bearer ${sameCommunityReaderToken}`));
+    expect(deniedSparkGrant.status).toBe(404);
+
+    const revokedPlayUrl = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/${sparkMediaAssetId}/play`)
+      .set("Cookie", sparkPlaybackCookie));
+    const revokedDirectMediaUrl = await withMediaPlatformEnabled(() => request(app)
+      .get(`/media-assets/${sparkMediaAssetId}`)
+      .set("Authorization", `Bearer ${sameCommunityReaderToken}`)
+      .set("Cookie", sparkPlaybackCookie));
+    expect(revokedPlayUrl.status).toBe(404);
+    expect(revokedDirectMediaUrl.status).toBe(404);
 
     const hubPost = await request(app)
       .post(`/community/hubs/${authorHubId}/posts`)
