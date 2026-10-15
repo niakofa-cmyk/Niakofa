@@ -5,6 +5,10 @@ This is a verification-first implementation, not a checkout, escrow, or paid
 marketplace expansion. Offers/Needs and goods/services retain the community-help
 model and the existing Niakofa/Nia boundary.
 
+Latest verification: [2026-10-15 workflow report](exchange-acceptance-2026-10-15.md).
+The expanded local functional matrix passed, but keyboard modal-focus checks
+failed. Production A/B/C and physical-device acceptance remain uncertified.
+
 ## Verified corrections
 
 - Missing Exchange base tables are no longer silently recreated after dependent

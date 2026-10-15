@@ -3,7 +3,7 @@
 - [Auth fixture contract](niakofa-auth-fixture-contract.md) — model token-version lookups and concurrent auth rows explicitly in native ESM route tests.
 - [CI package working directories](ci-working-directory.md) — API source-contract Jest tests must run from their package directory; root invocation can create false path failures.
 - [Deployed browser runner boundary](deployed-browser-runner-boundary.md) — use repository Playwright/system Chromium; admin state stays local in git-ignored `.auth/niakofa-admin.json`.
-- [Playwright local API fixtures](playwright-local-api-fixtures.md) — use worker-side Node fetch plus route.fulfill when forwarding to an ephemeral local API server.
+- [Playwright local API fixtures](playwright-local-api-fixtures.md) — isolate fixture browser auth from saved states; use worker fetch plus route.fulfill for local API forwarding.
 - [Workspace package manager](toolchain-install.md) — use the repository-pinned pnpm through npm exec when the system pnpm shim self-manages and stalls.
 - [GitHub push fallback](github-push-fallback.md) — use the bound connector and non-forced Git API commit when local HTTPS auth fails.
 - [GitHub connector exact sync](github-connector-exact-sync.md) — compare commit SHAs before interpreting REST message text; it may omit a newline even when the Git object matches.
