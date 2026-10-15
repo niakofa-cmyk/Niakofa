@@ -220,8 +220,15 @@ try {
   // Search-scoped pagination isolates this run from unrelated local fixtures.
   const discoveryKey = `Review ${fixtureKey.slice(0, 8)}`;
   const discoveryIds = [];
-  for (const [listing_type, resource_type] of [["offer", "goods"], ["need", "goods"], ["offer", "services"], ["need", "services"]]) {
-    const created = await api(seller).post("/community/exchange/listings").send({
+  const discoveryOwners = [];
+  const discoveryCases = [["offer", "goods"], ["need", "goods"], ["offer", "services"], ["need", "services"]];
+  for (const [index, [listing_type, resource_type]] of discoveryCases.entries()) {
+    // The real five-per-15-minute user limiter is active in this harness. Keep
+    // each discovery creation on its own fixture account so later seller-flow
+    // requests exercise the API without exhausting that production limit.
+    const discoveryOwner = await addUser(`discovery-${index + 1}`);
+    discoveryOwners.push(discoveryOwner);
+    const created = await api(discoveryOwner).post("/community/exchange/listings").send({
       seller_id: buyerB.id, // A submitted owner must never override authentication.
       listing_type, resource_type, title: `${discoveryKey} ${listing_type} ${resource_type}`,
       description: "A neighbor sharing or requesting useful community resources.",
@@ -231,7 +238,7 @@ try {
     expectStatus(created, 201, `create ${listing_type}/${resource_type}`);
     fixtureListings.push(created.body.listing.id);
     discoveryIds.push(created.body.listing.id);
-    assert.equal(created.body.listing.seller_id, seller.id);
+    assert.equal(created.body.listing.seller_id, discoveryOwner.id);
     const stored = await pool.query("SELECT listing_type,resource_type,seller_id FROM exchange_listings WHERE id=$1", [created.body.listing.id]);
     assert.equal(stored.rows[0].listing_type, listing_type);
     assert.equal(stored.rows[0].resource_type, resource_type);
@@ -251,9 +258,10 @@ try {
   assert.deepEqual([...seen].sort((a, b) => a - b), discoveryIds);
   assert.equal(new Set(seen).size, seen.length);
   expectStatus(await api(buyerB).patch(`/community/exchange/listings/${discoveryIds[3]}`).send({ title: "Unauthorized change" }), 404, "deny cross-account edit");
-  expectStatus(await api(seller).patch(`/community/exchange/listings/${discoveryIds[3]}`).send({ title: `${discoveryKey} revised service need` }), 200, "edit service need");
-  expectStatus(await api(seller).post(`/community/exchange/listings/${discoveryIds[3]}/withdraw`).send({}), 200, "withdraw service need");
-  expectStatus(await api(seller).post(`/community/exchange/listings/${discoveryIds[3]}/withdraw`).send({}), 409, "repeat withdrawal");
+  const serviceNeedOwner = discoveryOwners[3];
+  expectStatus(await api(serviceNeedOwner).patch(`/community/exchange/listings/${discoveryIds[3]}`).send({ title: `${discoveryKey} revised service need` }), 200, "edit service need");
+  expectStatus(await api(serviceNeedOwner).post(`/community/exchange/listings/${discoveryIds[3]}/withdraw`).send({}), 200, "withdraw service need");
+  expectStatus(await api(serviceNeedOwner).post(`/community/exchange/listings/${discoveryIds[3]}/withdraw`).send({}), 409, "repeat withdrawal");
   assert.equal((await listingState(discoveryIds[3])).status, "withdrawn");
   await assertNotPublic(discoveryIds[3], buyerA, "withdrawn need");
   expectStatus(await createPickup(discoveryIds[3], buyerA), 404, "unavailable need rejects coordination");
