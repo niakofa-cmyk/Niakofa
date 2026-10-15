@@ -234,8 +234,16 @@ describe("Exchange Sparks authorization and discovery contract", () => {
 
   it("exposes durable Sparks and legacy Stories only while their linked listing is active and approved", async () => {
     const route = await fs.readFile(exchangeRoutePath, "utf8");
-    const durableFeed = route.slice(route.indexOf("const durableRows ="), route.indexOf("// Old listing-linked Stories"));
-    const legacyFeed = route.slice(route.indexOf("const legacyRows ="), route.indexOf("const items ="));
+    const durableFeedStart = route.indexOf("const durableRows =");
+    const legacyFeedStart = route.indexOf("const legacyRows =", durableFeedStart);
+    const mergedItemsStart = route.indexOf("\n  const items = [", legacyFeedStart);
+
+    expect(durableFeedStart).toBeGreaterThanOrEqual(0);
+    expect(legacyFeedStart).toBeGreaterThan(durableFeedStart);
+    expect(mergedItemsStart).toBeGreaterThan(legacyFeedStart);
+
+    const durableFeed = route.slice(durableFeedStart, legacyFeedStart);
+    const legacyFeed = route.slice(legacyFeedStart, mergedItemsStart);
 
     for (const query of [durableFeed, legacyFeed]) {
       expect(query).toMatch(/eq\(exchangeListingsTable\.status, "active"\)/);

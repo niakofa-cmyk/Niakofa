@@ -18,6 +18,10 @@ import express from "express";
 import { normalizeMapboxStateCode } from "../src/lib/civic-geo.js";
 // Import the canonical table definitions directly so the schema barrel does
 // not initialize @workspace/db before the ESM database mock is registered.
+import {
+  exchangeListingsTable as actualExchangeListingsTable,
+  exchangePickupRequestsTable as actualExchangePickupRequestsTable,
+} from "../../../lib/db/src/schema/exchange.js";
 import { niaConversationsTable as actualNiaConversationsTable } from "../../../lib/db/src/schema/nia-conversations.js";
 import { niaMemoriesTable as actualNiaMemoriesTable } from "../../../lib/db/src/schema/nia-memories.js";
 
@@ -49,6 +53,8 @@ const mockDb: Record<string, jest.Mock> = {
 jest.unstable_mockModule("@workspace/db", () => ({
   db: mockDb,
   exchangeSparksTable: { id: "id", author_user_id: "author_user_id", status: "status", draft_expires_at: "draft_expires_at" },
+  exchangeListingsTable: actualExchangeListingsTable,
+  exchangePickupRequestsTable: actualExchangePickupRequestsTable,
   requestsTable:           { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id" },
   usersTable:              { id: "id", name: "name", email: "email", is_admin: "is_admin", benevolence_wallet: "benevolence_wallet", active: "active" },
   transactionsTable:       { id: "id", user_id: "user_id", amount: "amount", type: "type", description: "description", created_at: "created_at" },
