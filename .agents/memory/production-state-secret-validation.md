@@ -17,3 +17,25 @@ guard prevented all uploads, but the form status alone was misleading.
 operator validate the original files and re-enter their raw JSON through a
 secure channel. Never print the states or ask for them in chat. Do not retry a
 mutating production journey until the structural check passes.
+
+Fresh login-backed states may legitimately exceed the default 16 KiB serializer
+limit because the returned user includes community geometry. For a private local
+state file, an explicit bounded size allowance is appropriate; retain all origin,
+permission, token-shape, and approved-account validation.
+
+**Why:** A genuine approved session was rejected for size rather than invalid
+authentication. Re-entering credentials would not fix that failure.
+
+**How to apply:** Distinguish serialization-size failures from malformed states.
+Use a bounded per-command allowance for private files, never print their contents,
+and remove the files after acceptance.
+
+Keep the cross-community state builder's distinct-community gate intact. A
+single-owner Exchange photo check can use separately validated approved sessions
+without requiring cross-community separation, but cannot certify that boundary.
+
+**Why:** Distinct approved users are not necessarily members of different
+communities; the stronger builder checks a different acceptance prerequisite.
+
+**How to apply:** Scope authentication checks to the actual journey. Do not weaken
+a cross-community guard just to run a same-community upload/display check.
