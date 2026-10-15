@@ -497,7 +497,7 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), adminLimiter, a
         type: "exchange",
         title: "Exchange safety review update",
         body: notice,
-        actionUrl: "/community?section=exchange&mine=true",
+        actionUrl: "/community?tab=exchange&mine=true",
         metadata: { exchange_listing_id: listingId, report_id: updated.id, action },
       }).catch((error) => {
         logger.warn(

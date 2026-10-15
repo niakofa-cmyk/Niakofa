@@ -257,7 +257,7 @@ async function notifyExpiredExchangePickups(): Promise<number> {
         type: "exchange",
         title: "Exchange coordination expired",
         body,
-        actionUrl: "/community?section=exchange",
+        actionUrl: "/community?tab=exchange",
         metadata,
       }),
       createMessageNotification({
@@ -265,7 +265,7 @@ async function notifyExpiredExchangePickups(): Promise<number> {
         type: "exchange",
         title: "Exchange coordination expired",
         body,
-        actionUrl: "/community?section=exchange&mine=true",
+        actionUrl: "/community?tab=exchange&mine=true",
         metadata,
       }),
     ]);
@@ -563,7 +563,7 @@ async function processExchangeMaintenance(): Promise<void> {
           type: "exchange",
           title: "Your Exchange post was archived",
           body: `“${listing.title}” was archived after 30 days without active coordination. Open Exchange to renew it when you are ready.`,
-          actionUrl: "/community?section=exchange&mine=true",
+          actionUrl: "/community?tab=exchange&mine=true",
           metadata: { exchange_listing_id: listing.id, reason: "stale_after_30_days_without_active_coordination" },
         }),
         sendPushToUser(listing.seller_id, {

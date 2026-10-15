@@ -756,6 +756,7 @@ export function CommunityExchangeView() {
         <>
           <div className="grid gap-3 sm:grid-cols-2" data-testid="listings-grid">
             {listings.map((listing) => <ListingCard key={listing.id} listing={listing} onOpen={() => setSelectedId(listing.id)} onRenew={mineOnly ? renewListing : undefined} onEdit={mineOnly && !requestsLoading && !pickupRequests.some((request) => request.listing_id === listing.id && request.status === "accepted") ? (item) => {
+              setSelectedListing(item);
               setEditError("");
               setEditForm({
                 listing_type: item.listing_type,

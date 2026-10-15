@@ -229,6 +229,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       expect(withdrawn.rows[0].status).toBe("withdrawn");
     } finally {
       for (const context of contexts) await context.close().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 300));
       if (fixtureUsers.length) {
         await pool.query("BEGIN");
         try {
@@ -277,7 +278,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
   test("publishes, discovers, requests, accepts, and mutually completes a goods offer", async ({ browser }, testInfo) => {
     test.skip(process.env.RUN_EXCHANGE_LOCAL_E2E !== "1", "Explicit local fixture opt-in required.");
     requireLocalTarget();
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const pool = new Pool({ connectionString: databaseURL, max: 3 });
     const runId = randomUUID().replace(/[0-9]/g, (digit) => String.fromCharCode(103 + Number(digit)));
     const area = `Exchange E2E ${runId.slice(0, 8)}`;
@@ -387,6 +388,10 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       const directExchangeResponse = await ownerPage.goto(`${baseURL}/community/exchange`);
       expect(directExchangeResponse?.status()).toBe(200);
       await expect(ownerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      const legacyExchangeResponse = await ownerPage.goto(`${baseURL}/community?section=exchange`);
+      expect(legacyExchangeResponse?.status()).toBe(200);
+      await expect(ownerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      await setArea(ownerPage);
       const createSparkLink = ownerPage.getByTestId("button-create-exchange-spark-studio");
       await expect(createSparkLink).toHaveAttribute("href", "/community/moments?composer=1");
       await createSparkLink.click();
@@ -452,6 +457,27 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       expect(mobileMetrics.scrollWidth).toBeLessThanOrEqual(mobileMetrics.width);
       expect(mobileMetrics.maxTouchPoints).toBeGreaterThan(0);
       await expect(buyerPage.getByTestId("input-search-listings")).toHaveAttribute("type", "search");
+      const waitForListingQuery = (expected: Record<string, string>) => buyerPage.waitForRequest((request) => {
+        const url = new URL(request.url());
+        return url.pathname === "/api/community/exchange/listings"
+          && Object.entries(expected).every(([key, value]) => url.searchParams.get(key) === value);
+      });
+      for (const [tab, queryKey, queryValue] of [
+        ["goods", "resource_type", "goods"],
+        ["services", "resource_type", "services"],
+        ["needs", "type", "need"],
+        ["mine", "mine", "true"],
+      ]) {
+        const filteredRequest = waitForListingQuery({ [queryKey]: queryValue });
+        await buyerPage.getByTestId(`tab-filter-${tab}`).tap();
+        await filteredRequest;
+      }
+      await buyerPage.getByTestId("tab-filter-all").tap();
+      const searchRequest = waitForListingQuery({ q: listingTitle });
+      await buyerPage.getByTestId("input-search-listings").fill(listingTitle);
+      await searchRequest;
+      await expect(buyerPage.getByText(listingTitle, { exact: true })).toBeVisible();
+      await buyerPage.getByTestId("input-search-listings").fill("");
       await buyerPage.getByText(listingTitle, { exact: true }).tap();
       await expect(buyerPage.getByRole("dialog")).toBeVisible();
       await expect(buyerPage.getByTestId("input-pickup-area")).toBeVisible();
@@ -663,12 +689,194 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       });
       expect(preservedManualArea).toMatchObject({ label: area, source: "area" });
 
+      // Exercise owner edit and renew controls, followed by the report control
+      // and its duplicate-report response through the real browser/API paths.
+      const maintenanceTitle = `E2E maintenance ${runId}`;
+      const maintenanceListing = await authorizedFetch(owner, "/community/exchange/listings", "POST", {
+        listing_type: "offer",
+        resource_type: "goods",
+        title: maintenanceTitle,
+        description: "A separate listing for owner edit and renewal checks.",
+        category: "household",
+        condition: "good",
+        neighborhood: area,
+        pickup_location_type: "library",
+        pickup_notes: "Meet by the public library entrance.",
+      });
+      expect(maintenanceListing.status).toBe(201);
+      const maintenanceListingId = Number(maintenanceListing.body.listing.id);
+      const editedTitle = `${maintenanceTitle} revised`;
+
+      await openExchange(ownerPage);
+      await ownerPage.getByTestId("tab-filter-mine").click();
+      await ownerPage.getByTestId(`button-edit-listing-${maintenanceListingId}`).click();
+      await expect(ownerPage.getByRole("dialog", { name: "Edit Exchange post" })).toBeVisible();
+      await ownerPage.getByTestId("input-edit-title").fill(editedTitle);
+      const editResponsePromise = ownerPage.waitForResponse((response) =>
+        response.url().includes(`/api/community/exchange/listings/${maintenanceListingId}`)
+        && response.request().method() === "PATCH",
+      );
+      await ownerPage.getByTestId("button-save-edit-listing").click();
+      expect((await editResponsePromise).status()).toBe(200);
+      await expect(ownerPage.getByText(editedTitle, { exact: true })).toBeVisible();
+
+      await pool.query(
+        "UPDATE exchange_listings SET status='archived', archived_at=NOW(), archive_reason='expired' WHERE id=$1",
+        [maintenanceListingId],
+      );
+      await openExchange(ownerPage);
+      await ownerPage.getByTestId("tab-filter-mine").click();
+      const renewButton = ownerPage.getByTestId(`button-renew-listing-${maintenanceListingId}`);
+      await expect(renewButton).toBeVisible();
+      const renewResponsePromise = ownerPage.waitForResponse((response) =>
+        response.url().includes(`/api/community/exchange/listings/${maintenanceListingId}/renew`)
+        && response.request().method() === "POST",
+      );
+      await renewButton.click();
+      expect((await renewResponsePromise).status()).toBe(200);
+      await expect(ownerPage.getByTestId(`button-edit-listing-${maintenanceListingId}`)).toBeVisible();
+
+      await openExchange(outsiderPage);
+      await outsiderPage.getByTestId("input-search-listings").fill(editedTitle);
+      await expect(outsiderPage.getByText(editedTitle, { exact: true })).toBeVisible();
+      await outsiderPage.getByText(editedTitle, { exact: true }).click();
+      await outsiderPage.getByTestId("button-report-listing").click();
+      await expect(outsiderPage.getByRole("dialog", { name: "Report a safety concern" })).toBeVisible();
+      await outsiderPage.getByTestId("select-report-type").selectOption("spam");
+      await outsiderPage.getByTestId("input-report-description").fill(
+        "This synthetic test listing is being reported to verify the safety flow.",
+      );
+      const reportResponsePromise = outsiderPage.waitForResponse((response) =>
+        response.url().includes(`/api/community/exchange/listings/${maintenanceListingId}/report`)
+        && response.request().method() === "POST",
+      );
+      await outsiderPage.getByTestId("button-submit-report").click();
+      const reportResponse = await reportResponsePromise;
+      expect(reportResponse.status()).toBe(201);
+      const reportRow = await pool.query(
+        "SELECT reporter_id,type,reported_exchange_listing_id FROM reports WHERE reporter_id=$1 AND reported_exchange_listing_id=$2",
+        [outsider.id, maintenanceListingId],
+      );
+      expect(reportRow.rows).toEqual([{
+        reporter_id: outsider.id,
+        type: "spam",
+        reported_exchange_listing_id: maintenanceListingId,
+      }]);
+      expect((await authorizedFetch(
+        outsider,
+        `/community/exchange/listings/${maintenanceListingId}/report`,
+        "POST",
+        { type: "spam", description: "Duplicate synthetic report for conflict verification." },
+      )).status).toBe(409);
+
+      const createActionListing = async (title: string) => {
+        const response = await authorizedFetch(owner, "/community/exchange/listings", "POST", {
+          listing_type: "offer",
+          resource_type: "goods",
+          title,
+          description: "A separate listing for a pickup action check.",
+          category: "household",
+          condition: "good",
+          neighborhood: area,
+          pickup_location_type: "library",
+          pickup_notes: "Meet by the public library entrance.",
+        });
+        expect(response.status).toBe(201);
+        return Number(response.body.listing.id);
+      };
+      const createActionPickup = async (actionListingId: number, requester: FixtureUser) => {
+        const response = await authorizedFetch(
+          requester,
+          `/community/exchange/listings/${actionListingId}/pickup-requests`,
+          "POST",
+          {
+            note: "I can use this for a neighborhood group.",
+            pickup_area: `${area} public library`,
+            pickup_location_type: "library",
+            pickup_note: "Meet near the public entrance.",
+            proposed_window: "Saturday afternoon",
+          },
+        );
+        expect(response.status).toBe(201);
+        return Number(response.body.pickup_request.id);
+      };
+
+      const declineTitle = `E2E decline ${runId}`;
+      const declineListingId = await createActionListing(declineTitle);
+      const declinePickupId = await createActionPickup(declineListingId, outsider);
+      await openExchange(ownerPage);
+      await ownerPage.getByTestId(`button-open-exchange-messages-${declinePickupId}`).click();
+      await ownerPage.waitForURL(/\/messages\?/);
+      await ownerPage.getByRole("button", { name: "Conversation info" }).click();
+      await expect(ownerPage.getByTestId("exchange-pickup-context-panel")).toBeVisible();
+      await expect(ownerPage.getByTestId("exchange-pickup-status")).toHaveText("requested");
+      await ownerPage.getByTestId("button-exchange-decline").click();
+      await expect(ownerPage.getByTestId("exchange-pickup-status")).toHaveText("declined");
+      expect((await pool.query(
+        "SELECT status FROM exchange_pickup_requests WHERE id=$1",
+        [declinePickupId],
+      )).rows[0].status).toBe("declined");
+      const openDeclinedPostLink = ownerPage.getByTestId("link-exchange-pickup");
+      await expect(openDeclinedPostLink).toHaveAttribute(
+        "href",
+        `/community?tab=exchange&listingId=${declineListingId}&pickupRequestId=${declinePickupId}`,
+      );
+      await openDeclinedPostLink.click();
+      await ownerPage.waitForURL(/\/community\?tab=exchange/);
+      await expect(ownerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      await expect(ownerPage.getByRole("dialog", { name: declineTitle })).toBeVisible();
+
+      const cancelListingId = await createActionListing(`E2E cancel ${runId}`);
+      const cancelPickupId = await createActionPickup(cancelListingId, buyer);
+      await buyerPage.goto(
+        `${baseURL}/messages?mode=direct&recipientId=${owner.id}&exchangeListingId=${cancelListingId}&exchangePickupRequestId=${cancelPickupId}`,
+      );
+      await buyerPage.getByRole("button", { name: "Conversation info" }).click();
+      await expect(buyerPage.getByTestId("exchange-pickup-context-panel")).toBeVisible();
+      await expect(buyerPage.getByTestId("exchange-pickup-status")).toHaveText("requested");
+      await buyerPage.getByTestId("button-exchange-cancel").click();
+      await expect(buyerPage.getByTestId("exchange-pickup-status")).toHaveText("cancelled");
+      expect((await pool.query(
+        "SELECT status FROM exchange_pickup_requests WHERE id=$1",
+        [cancelPickupId],
+      )).rows[0].status).toBe("cancelled");
+
+      const disputeListingId = await createActionListing(`E2E dispute ${runId}`);
+      const disputePickupId = await createActionPickup(disputeListingId, buyer);
+      expect((await authorizedFetch(
+        owner,
+        `/community/exchange/pickup-requests/${disputePickupId}/accept`,
+        "POST",
+      )).status).toBe(200);
+      await buyerPage.goto(
+        `${baseURL}/messages?mode=direct&recipientId=${owner.id}&exchangeListingId=${disputeListingId}&exchangePickupRequestId=${disputePickupId}`,
+      );
+      await buyerPage.getByRole("button", { name: "Conversation info" }).click();
+      await expect(buyerPage.getByTestId("exchange-pickup-context-panel")).toBeVisible();
+      await expect(buyerPage.getByTestId("exchange-pickup-status")).toHaveText("accepted");
+      await buyerPage.getByTestId("button-exchange-open-dispute").click();
+      await buyerPage.getByTestId("input-exchange-dispute-reason").fill(
+        "The pickup arrangement changed and needs a safety review.",
+      );
+      const disputeResponsePromise = buyerPage.waitForResponse((response) =>
+        response.url().includes(`/api/community/exchange/pickup-requests/${disputePickupId}/dispute`)
+        && response.request().method() === "POST",
+      );
+      await buyerPage.getByRole("button", { name: "Send dispute" }).click();
+      expect((await disputeResponsePromise).status()).toBe(201);
+      await expect(buyerPage.getByTestId("exchange-pickup-status")).toHaveText("disputed");
+      expect((await pool.query(
+        "SELECT status FROM exchange_pickup_requests WHERE id=$1",
+        [disputePickupId],
+      )).rows[0].status).toBe("disputed");
+
       await testInfo.attach("exchange-local-lifecycle.txt", {
-        body: `listing=${listingId}; pickup=${pickupId}; lifecycle=completed; location=manual-persisted+browser-granted+browser-denied; db=local; api=real; query-route=${queryRouteWorked}`,
+        body: `listing=${listingId}; pickup=${pickupId}; lifecycle=completed; links=exchange-entry+studio+messages-open-post; filters=goods+services+needs+mine+search; owner=edit+renew+withdraw; report=created+duplicate-rejected; messages=decline+cancel+dispute; location=manual-persisted+browser-granted+browser-denied; db=local; api=real; query-route=${queryRouteWorked}`,
         contentType: "text/plain",
       });
     } finally {
       for (const context of contexts) await context.close().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 300));
       if (fixtureUsers.length) {
         await pool.query("BEGIN");
         try {

@@ -629,7 +629,7 @@ export default function MessagesPage() {
         startDirectWithUser(recipient, hasExchangeContext ? "" : `Replying to ${recipient.name}'s Story`);
         if (Number.isSafeInteger(storyId) && storyId > 0) setContexts([{ type: "story", story_id: storyId, label: "Community Story" }]);
         if (hasExchangeContext) {
-          const params = new URLSearchParams({ section: "exchange", listingId: String(exchangeListingId) });
+          const params = new URLSearchParams({ tab: "exchange", listingId: String(exchangeListingId) });
           if (Number.isSafeInteger(exchangePickupRequestId) && exchangePickupRequestId > 0) params.set("pickupRequestId", String(exchangePickupRequestId));
           setContexts([{
             type: "link",

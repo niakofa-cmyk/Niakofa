@@ -724,7 +724,7 @@ router.post("/community/exchange/listings/:id/renew", requireAuth, requireApprov
     type: "exchange",
     title: "Your Exchange post is active again",
     body: `“${safeListingLabel(updated.title)}” is visible to neighbors again.`,
-    actionUrl: "/community?section=exchange&mine=true",
+    actionUrl: "/community?tab=exchange&mine=true",
     metadata: { exchange_listing_id: updated.id, action: "renewed" },
   }).catch((error) => {
     logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: renewal notification failed");
@@ -1488,7 +1488,7 @@ router.post("/community/exchange/listings/:id/report", requireAuth, requireAppro
         type: "exchange",
         title: "Your Exchange post is temporarily on hold",
         body: `“${listing.title}” is temporarily hidden while the safety team reviews community reports. Active pickup history is preserved.`,
-        actionUrl: "/community?section=exchange&mine=true",
+        actionUrl: "/community?tab=exchange&mine=true",
         metadata: { exchange_listing_id: listingId, action: "temporary_hold" },
       }).catch((error) => {
         logger.warn({ errorName: error instanceof Error ? error.name : typeof error }, "community exchange: temporary hold notification failed");

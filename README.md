@@ -160,7 +160,7 @@ The canonical contract lives in `artifacts/pay-it-forward/src/components/communi
 | `/request/new` | Create a help request (category, urgency, payment type) |
 | `/request/:id` | Track a live request — claim → en-route → arrived → complete |
 | `/community` | Community Hub — Moments, Sparks, Spirals, Stories, Legacy, and civic resources |
-| `/community?section=exchange` | Niakofa Exchange — local offers, needs, services, pickup coordination, safety review |
+| `/community?tab=exchange` | Niakofa Exchange — local offers, needs, services, pickup coordination, safety review. Legacy `?section=exchange` links are also accepted. |
 | `/wallet` | Benevolence wallet, scheduled payments, pay-it-forward pledges |
 | `/profile` | User profile, helper mode toggle, trust score |
 | `/family-vault` | Family Vault — preserve family memories, photos, stories |

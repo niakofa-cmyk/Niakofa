@@ -1285,7 +1285,7 @@ export function CommunityStoryRail({
           exchangeDraftRef.current = null;
           resetComposer();
           setComposerOpen(false);
-          navigate("/community?section=exchange");
+          navigate("/community?tab=exchange");
           return;
         } finally {
           publishControllerRef.current = null;
@@ -1883,7 +1883,7 @@ export function CommunityStoryRail({
               setComposerOpen(false);
               window.dispatchEvent(new Event("community-moments-refresh"));
               if (result.kind === "moment") navigate(buildMomentsSparkHref(result.storyId, audience, hubId));
-              else if (result.kind === "exchange_spark") navigate("/community?section=exchange");
+              else if (result.kind === "exchange_spark") navigate("/community?tab=exchange");
               else if (familyStoryFamilyId) navigate(`/family/${familyStoryFamilyId}`);
             })().catch(reportClientSideEffectFailure("community.story-studio.publish-cleanup"));
           }}

@@ -163,7 +163,7 @@ export function ExchangePickupContextPanel({ listingId, pickupRequestId, current
   const disputeOutcome = safeOutcomeLabel(publicDispute?.outcome ?? topLevelDispute?.dispute_outcome);
   const openedAt = formatDisputeTimestamp(publicDispute?.opened_at ?? pickupRequest?.dispute_opened_at);
   const resolvedAt = formatDisputeTimestamp(publicDispute?.resolved_at ?? pickupRequest?.dispute_resolved_at);
-  const exchangeUrl = `/community?section=exchange&listingId=${listingId}&pickupRequestId=${pickupRequestId}`;
+  const exchangeUrl = `/community?tab=exchange&listingId=${listingId}&pickupRequestId=${pickupRequestId}`;
 
   return (
     <section className="rounded-2xl border border-primary/25 bg-primary/5 p-4" aria-label="Exchange pickup coordination" data-testid="exchange-pickup-context-panel">
