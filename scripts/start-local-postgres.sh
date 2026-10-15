@@ -119,6 +119,12 @@ export PGDATABASE="$PGDATABASE"
 export PGUSER="$PGUSER"
 export NIA_SERVICE_URL="${NIAKOFA_LOCAL_NIA_URL:-http://127.0.0.1:3001}"
 unset PGPASSWORD REDIS_URL REDIS_URLS
+if [[ "${MEDIA_PLATFORM_V21:-}" == "1" ]]; then
+  # Media uploads require real BullMQ workers even in the local preview.
+  # Keep their connection loopback-only, independent of production credentials.
+  REDIS_URL="$(bash "$(dirname "${BASH_SOURCE[0]}")/start-local-redis.sh")"
+  export REDIS_URL
+fi
 
 trap - EXIT
 rmdir "$PG_SETUP_LOCK" 2>/dev/null || true

@@ -2,6 +2,7 @@ import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
 
 import "./community-exchange-view.css";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   AlertCircle,
   ArrowLeft,
@@ -189,22 +190,43 @@ function ModalFrame({
   children: ReactNode;
   wide?: boolean;
 }) {
+  // These dialogs use external controls rather than a Radix Trigger.
+  const [opener] = useState<HTMLElement | null>(() =>
+    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
   return (
-    <div className="fixed inset-0 z-[80] overflow-y-auto bg-background/80 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label={title}>
-      <button type="button" className="absolute inset-0 h-full w-full cursor-default" aria-label="Close dialog" onClick={onClose} />
-      <div className={`relative mx-auto my-4 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl sm:my-8 ${wide ? "max-w-2xl" : "max-w-lg"}`}>
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-border bg-card/95 p-5 backdrop-blur sm:p-6">
-          <div>
-            {eyebrow && <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">{eyebrow}</p>}
-            <h2 className="mt-1 text-xl font-black tracking-tight">{title}</h2>
+    <DialogPrimitive.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Content
+          asChild
+          aria-label={title}
+          aria-modal="true"
+          aria-describedby={undefined}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (opener?.isConnected) opener.focus();
+          }}
+        >
+          <div className="fixed inset-0 z-[80] overflow-y-auto bg-background/80 p-3 backdrop-blur-sm sm:p-6">
+            <button type="button" tabIndex={-1} className="absolute inset-0 h-full w-full cursor-default" aria-label="Close dialog" onClick={onClose} />
+            <div className={`relative mx-auto my-4 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl sm:my-8 ${wide ? "max-w-2xl" : "max-w-lg"}`}>
+              <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-border bg-card/95 p-5 backdrop-blur sm:p-6">
+                <div>
+                  {eyebrow && <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">{eyebrow}</p>}
+                  <DialogPrimitive.Title asChild><h2 className="mt-1 text-xl font-black tracking-tight">{title}</h2></DialogPrimitive.Title>
+                </div>
+                <button type="button" onClick={onClose} className="rounded-xl p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary" aria-label="Close dialog" data-testid="button-close-dialog">
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="p-5 sm:p-6">{children}</div>
+            </div>
           </div>
-          <button type="button" onClick={onClose} className="rounded-xl p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary" aria-label="Close dialog" data-testid="button-close-dialog">
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </div>
-        <div className="p-5 sm:p-6">{children}</div>
-      </div>
-    </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 

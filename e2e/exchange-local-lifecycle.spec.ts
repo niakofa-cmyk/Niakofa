@@ -24,7 +24,8 @@ function requireLocalTarget(): void {
   if (sessionSecret.length < 32) throw new Error("A local API-compatible SESSION_SECRET is required.");
 }
 
-test.use({ trace: "off", screenshot: "off", video: "off" });
+const emptyState = { cookies: [], origins: [] };
+test.use({ storageState: emptyState, trace: "off", screenshot: "off", video: "off" });
 const workspaceRoot = process.cwd();
 const dbRequire = createRequire(resolve(workspaceRoot, "lib/db/package.json"));
 const { Pool } = dbRequire("pg") as { Pool: typeof PostgresPool };
@@ -80,7 +81,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       if (!owner.token || !buyer.token) throw new Error("Fixture token signing failed.");
 
       const makePage = async (user: FixtureUser) => {
-        const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+        const context = await browser.newContext({ storageState: emptyState, viewport: { width: 1280, height: 900 } });
         contexts.push(context);
         await context.addInitScript(({ token, id, name, email }) => {
           localStorage.setItem("niakofa_token", token);
@@ -131,12 +132,12 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       pickupId = createdPickup.body.pickup_request.id as number;
 
       await ownerPage.goto(`${baseURL}/community?tab=exchange`);
-      await expect(ownerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
       const areaDialog = ownerPage.getByRole("dialog", { name: "Set your local area" });
       if (await areaDialog.isVisible().catch(() => false)) {
         await ownerPage.getByTestId("input-location-area").fill(area);
         await ownerPage.getByTestId("button-save-location").click();
       }
+      await expect(ownerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
       await expect(ownerPage.getByTestId(`pickup-request-${pickupId}`)).toBeVisible({ timeout: 10_000 });
       await ownerPage.getByTestId(`button-open-exchange-messages-${pickupId}`).click();
       await ownerPage.waitForURL(/\/messages\?/);
@@ -342,6 +343,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
         mobile = false,
       ) => {
         const context = await browser.newContext({
+          storageState: emptyState,
           viewport,
           ...(mobile ? { isMobile: true, hasTouch: true, deviceScaleFactor: 3 } : {}),
         });
@@ -360,7 +362,8 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
 
       const openExchange = async (page: Page) => {
         await page.goto(`${baseURL}/community?tab=exchange`);
-        await expect(page.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible({ timeout: 10_000 });
+        // The initial location dialog correctly hides the background from AT.
+        await expect(page.getByRole("region", { name: "Niakofa Exchange", includeHidden: true })).toBeVisible({ timeout: 10_000 });
         return true;
       };
       queryRouteWorked = await openExchange(ownerPage);

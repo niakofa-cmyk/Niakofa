@@ -16,6 +16,7 @@
 - [LiveKit media boundary](livekit-media-boundary.md) — production Circles/Spirals use LiveKit only; legacy TURN/ICE remains compatibility infrastructure.
 - [API preview database gate](api-preview-database-gate.md) — migration-first API previews must fail closed when the development database is unreachable.
 - [Local PostgreSQL preview](local-postgres-preview.md) — isolated dev Postgres uses Haversine fallback when the standard module lacks PostGIS.
+- [Local media verification](local-media-verification.md) — real browser upload acceptance needs actual loopback queue workers; injected test queues do not prove preview readiness.
 - [Isolated media runtime fixtures](isolated-media-runtime-fixtures.md) — media worker tests need a separate local uploads directory as well as a disposable database.
 - [Pool History accounting](pool-history-accounting.md) — reconcile gross ledger rows to linked Stripe net; public projections may omit the linkage needed to prove a correction.
 - [Stripe live-mode selection](stripe-live-mode-selection.md) — pass explicit `livemode` on Stripe MCP reads and inspect BalanceTransaction fee details.

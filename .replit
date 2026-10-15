@@ -114,7 +114,8 @@ USER_ADMIN_STATE = ".auth/niakofa-admin.json"
 USER_A_STATE = ".auth/niakofa-admin.json"
 USER_B_STATE = ".auth/niakofa-admin.json"
 VITE_MEDIA_STUDIO_V2 = "true"
+MEDIA_PLATFORM_V21 = "1"
 
 [nix]
 channel = "stable-25_05"
-packages = ["freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "mupdf", "openjpeg", "swig", "xcbuild"]
+packages = ["freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "mupdf", "openjpeg", "swig", "xcbuild", "redis"]
