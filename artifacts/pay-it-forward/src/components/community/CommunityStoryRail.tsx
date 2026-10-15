@@ -714,10 +714,11 @@ export function CommunityStoryRail({
   }, [draftReady, draftRecoveryFailed, userId, scopeKey, files, musicFile, musicRightsBasis, musicLicenseReference, musicRightsAccepted, musicVolume, uploadedMusicAssetId, gallerySelection, previewFileIndex, caption, audience, exchangeListingId, editorElements, effect, textBackground, textColor, textSize, textAlign, trimPreview, coverTimes, uploadedIds, momentAccessibility, cameraClipReelMarker, pendingCameraReelStoryId]);
 
   useEffect(() => {
-    if (!composerOpen || studioV2) return;
+    if (!composerOpen || !userId) return;
     let cancelled = false;
     setExchangeListingsLoading(true);
     setExchangeListingsError("");
+    setOwnedExchangeListings([]);
     getExchangeListings({ mine: true, limit: 50 })
       .then((result) => {
         if (!cancelled) {
@@ -733,7 +734,7 @@ export function CommunityStoryRail({
         if (!cancelled) setExchangeListingsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [composerOpen, studioV2]);
+  }, [composerOpen, userId]);
 
   const loadMediaUrl = useCallback(async (media: StoryMedia) => {
     if (mediaObjectUrlsRef.current[media.id]) return;

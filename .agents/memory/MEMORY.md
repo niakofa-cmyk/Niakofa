@@ -100,3 +100,4 @@
 - [IndexedDB test fixtures](indexeddb-test-fixtures.md) — return the same transaction object that receives callbacks; cloned fakes can leave draft writes pending forever.
 - [Studio trim boundary policy](studio-trim-boundary-policy.md) — fast trims must shrink at keyframes and never retain footage outside the user-selected range.
 - [Media MIME parameter canonicalization](media-mime-parameters.md) — strip codec parameters before storage/type comparisons, while retaining byte-signature and metadata validation.
+- [Chromium streamed uploads](playwright-xhr-file-upload.md) — Playwright route mocks may hide raw XHR File bodies; use a loopback receiver when byte-level upload proof matters.
