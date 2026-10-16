@@ -62,6 +62,33 @@ through the secure path. Then preflight must independently verify active,
 approved identities and the intended same/different community relationships.
 Do not change memberships to manufacture a passing test.
 
+### Requested repository follow-up: approved A/D/C accounts
+
+The existing repository was checked before requesting replacement account
+assignments. At the follow-up, repository HEAD was
+`72bc38addad2ac5cdc6d7c6600b358681bc40601`; this is a source-inspection revision,
+not a newly verified production deployment.
+
+| Label | What the repository actually establishes |
+| --- | --- |
+| A | The local matrix's author/publisher is inserted approved into the author community. Historical production acceptance also records an approved A session on 2026-10-04; identical labels alone do not bind those two identities. |
+| B | The local matrix's reader is inserted approved into A's local community. Existing two-state media tooling uses A/B labels; it does not define an Exchange D identity. |
+| C | The local matrix's reader is inserted approved into a different local community. Historical production acceptance records A/C in different Communities on 2026-10-04, with Hubs 1 and 18. Hub IDs are not current community IDs. |
+| D | No account/role definition or approved production mapping was found in the searched tracked canonical source, runners, or acceptance documents, apart from this report's unresolved A/D/C proposal. |
+
+Sources: `docs/CROSS_COMMUNITY_MEDIA_TEST_MATRIX.md`,
+`artifacts/api-server/src/__tests__/community-media-api-runtime.integration.test.ts`,
+`docs/PRODUCTION_ACCEPTANCE_MATRIX.md`, and
+`ops/build-media-certification-states.mjs`.
+
+The matrix now records this lookup explicitly. No users were created, approved,
+relabelled, logged in, or moved between communities for this follow-up. The
+supplied updated review is review text, not live schema output or physical-device
+evidence. Existing source/CI corrections were retained rather than repeated.
+The remaining account question is whether D means the documented B role or a
+separate approved production identity. Current authentication and the other
+production/device gates remain unverified.
+
 ## Requested production workflow matrix
 
 No physical device model, OS version, Safari version, or Chrome version is
@@ -171,10 +198,13 @@ The missing CI wiring was confirmed and corrected in this workspace:
 The migration suite's local 20,000-row Haversine benchmark is not a production
 PostGIS performance result.
 
-The CI/ignore changes are **uncommitted workspace changes**, not part of deployed
-`004b6b36bab8477c9791ff792c942d2501987924`. No GitHub CI run or new deployment was
-triggered, so this report does not claim the new CI step has already passed on
-GitHub.
+At the initial observation, the CI/ignore fixes were uncommitted workspace
+changes and were not part of deployed
+`004b6b36bab8477c9791ff792c942d2501987924`. The later repository account lookup
+confirmed the CI command and dedicated package script are present in source at
+`72bc38addad2ac5cdc6d7c6600b358681bc40601`. That lookup did not verify a GitHub CI
+run or refresh deployment identity. This report does not claim the new CI step
+has already passed on GitHub or that the later source revision is deployed.
 
 ## Unblock and completion rule
 

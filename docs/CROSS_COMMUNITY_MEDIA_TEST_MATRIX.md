@@ -102,6 +102,41 @@ users below as production accounts.
 
 ## Production Spark acceptance prerequisites
 
+### Repository account lookup for Exchange acceptance
+
+The requested A/D/C lookup was checked against this matrix, the synthetic
+fixture definitions in
+`artifacts/api-server/src/__tests__/community-media-api-runtime.integration.test.ts`,
+the production acceptance records, and the credential-to-state runner definitions.
+The repository establishes these local roles:
+
+| Label | Documented role | Approval evidence | Community relationship |
+| --- | --- | --- | --- |
+| A | Synthetic author/publisher | Fixture inserts `approval_status='approved'` | Author's disposable local community |
+| B | Synthetic same-community reader | Fixture inserts `approval_status='approved'` | Same local community as A |
+| C | Synthetic cross-community reader | Fixture inserts `approval_status='approved'` | A distinct disposable local community |
+| D | No assignment found | None found | Unknown; do not alias to B |
+
+These fixtures are created and removed by the local integration suite. They
+are not an inventory of current production accounts, and their approval does
+not authorize production sign-in or writes.
+
+`PRODUCTION_ACCEPTANCE_MATRIX.md` separately records approved production A/C
+sessions in different Communities on **2026-10-04**, associated with Hubs 1 and
+18. These are Hub identifiers, not evidence of current community IDs. That
+historical run neither defines D nor establishes current approval, active
+status, credentials, or Exchange test authorization.
+
+For the requested Exchange A/D/C run, A's seller role, D's buyer role, and C's
+privacy-viewer role still need to be bound to the actual approved disposable
+production identities. If D was intended to mean the existing B role, confirm
+that correction explicitly; do not relabel users or change their memberships.
+After binding, verify the intended community relationships from authenticated
+server responses before any mutation.
+
+The detailed evidence and blocked production/device steps are recorded in
+[`exchange-production-acceptance-2026-10-15.md`](exchange-production-acceptance-2026-10-15.md).
+
 Production cross-community Spark privacy has not yet been verified. The
 separately gated run still needs:
 

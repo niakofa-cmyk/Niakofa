@@ -41,4 +41,4 @@ Exchange acceptance must preserve the current matrix's account roles and require
 
 **Why:** The user requires renewed disposable-account authorization, the documented role/community boundaries, and a blocked certification status for every unresolved critical path.
 
-**How to apply:** Confirm the current production role mapping before login-backed testing or writes. Do not relabel accounts, change memberships, or substitute desktop/mobile emulation for physical-device results; mark missing device and critical workflow evidence blocked.
+**How to apply:** Check the repository's cross-community matrix and recorded production acceptance evidence before asking the user to supply account roles again. Confirm the current production role mapping before login-backed testing or writes. Do not relabel accounts, change memberships, or substitute desktop/mobile emulation for physical-device results; mark missing device and critical workflow evidence blocked.
