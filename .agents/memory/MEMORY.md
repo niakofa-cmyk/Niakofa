@@ -105,3 +105,5 @@
 - [Chromium streamed uploads](playwright-xhr-file-upload.md) — Playwright route mocks may hide raw XHR File bodies; use a loopback receiver when byte-level upload proof matters.
 - [Studio focus ownership](studio-focus-ownership.md) — active Studio owns keyboard focus and Escape; legacy effects must not refocus controls while typing.
 - [Native browser function receivers](native-browser-function-receivers.md) — injected fetch must retain the global receiver; Node mocks alone can miss Chromium playback failures.
+- [Browser recording duration](media-recorder-duration.md) — live WebM may omit duration headers; derive duration server-side from packets rather than trusting client metadata.
+- [Studio theme verification](studio-theme-verification.md) — check final computed colors in both unified Studio and retained legacy audience screens, not just matching CSS declarations.

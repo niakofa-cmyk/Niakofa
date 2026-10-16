@@ -37,6 +37,7 @@ export type StudioAction =
   | { type: "saveOriginal"; value: boolean }
   | { type: "progress"; label: string; percent: number }
   | { type: "fail"; message: string }
+  | { type: "selectionError"; message: string }
   | { type: "reset" };
 
 export const initialStudioState = (mode: StudioMode = "capture"): StudioState => ({
@@ -117,6 +118,8 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
     case "fail":
       // A failed publish returns to the sheet with every item and caption intact.
       return { ...state, mode: "publish", error: action.message, progress: { label: "", percent: 0 } };
+    case "selectionError":
+      return { ...state, error: action.message };
     case "reset":
       return initialStudioState();
     default:

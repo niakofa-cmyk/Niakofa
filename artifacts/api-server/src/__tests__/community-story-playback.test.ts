@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
+import { readFileSync } from "node:fs";
 import {
   buildStoryPlaybackSetCookie,
   issueStoryPlaybackGrant,
@@ -7,6 +8,25 @@ import {
   verifyStoryPlaybackGrant,
 } from "../lib/community-story-playback";
 import { canReadExchangeLinkedStory } from "../lib/community-story-policy";
+import { isMomentCompositionStatusVisibleToViewer } from "../lib/moment-video-compose";
+
+describe("review-pending Story media privacy", () => {
+  it("allows a ready attachment preview only to its author, not other viewers", () => {
+    expect(isMomentCompositionStatusVisibleToViewer("pending", 11, 11)).toBe(true);
+    expect(isMomentCompositionStatusVisibleToViewer("pending", 11, 12)).toBe(false);
+    for (const status of ["rejected", "deletion_pending", "deleted"]) {
+      expect(isMomentCompositionStatusVisibleToViewer(status, 11, 11)).toBe(false);
+    }
+    const route = readFileSync(new URL("../routes/community-stories.ts", import.meta.url), "utf8");
+    const video = route.slice(route.indexOf("async function readableStoryVideoMedia"), route.indexOf("async function momentCompositionForStory"));
+    const image = route.slice(route.indexOf('router.get("/community/stories/media/:id"'), route.indexOf('router.post("/community/stories/media/:id/playback-grant"'));
+    for (const code of [video, image]) {
+      expect(code).toContain("isMomentCompositionStatusVisibleToViewer(row.status, row.author_user_id,");
+      expect(code).toContain('row.media_asset_id !== null && row.asset_status !== "ready"');
+      expect(code).toContain("viewerCanReadRetainedStory(");
+    }
+  });
+});
 
 const secret = "test-session-secret-with-at-least-32-characters";
 const now = 1_800_000_000_000;

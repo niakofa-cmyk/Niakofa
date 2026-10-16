@@ -1,5 +1,6 @@
 import { itemKind, type StudioItem } from "./studio-policy";
 import { readVideoDurationSeconds } from "@/lib/video-duration";
+import { validateStudioFile } from "./studio-file-validation";
 
 export const newItemId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `i${Date.now()}${Math.random().toString(16).slice(2)}`);
 
@@ -9,6 +10,7 @@ export function readVideoDurationMs(file: File, timeoutMs = 10_000): Promise<num
 }
 
 export async function itemFromFile(file: File, source: StudioItem["source"], measuredMs?: number): Promise<StudioItem> {
+  await validateStudioFile(file);
   const kind = itemKind(file);
   const durationMs = kind === "video" ? (measuredMs ?? await readVideoDurationMs(file)) : null;
   return { id: newItemId(), file, kind, durationMs, source, coverTimeMs: 0 };

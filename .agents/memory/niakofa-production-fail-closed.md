@@ -19,3 +19,9 @@ public host is not repeated in ALLOWED_ORIGIN.
 Require `ALLOWED_ORIGIN` in production, mount CORS on `/api` rather than the
 whole Express app, and make migration failure exit non-zero after bounded
 retries.
+
+Development preview origins must be matched against this workspace's runtime-assigned domains, not all Replit domains, even when a production allowlist is inherited by development.
+
+**Why:** GET requests without an Origin header can work while same-origin browser publishing POSTs fail with CORS before reaching the route. An inherited production allowlist does not necessarily contain the current ephemeral preview host.
+
+**How to apply:** Preserve exact-origin production checks and its startup guard. Keep the runtime-preview exception development-only and verify an actual browser POST or preflight through the current preview address.

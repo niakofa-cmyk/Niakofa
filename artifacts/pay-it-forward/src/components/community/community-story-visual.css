@@ -755,9 +755,6 @@
   color: #ffffff;
 }
 
-/* Spark creation, camera, and playback surfaces stay dark when the app is light. */
-html:not(.dark) .nia-story-publish { background: #00cfff; color: #08182b; }
-
 /* Spark Studio redesign: keep the editor's behavior and controls, refresh its presentation. */
 .nia-story-composer {
   --spark-ink: #193c3b;
@@ -1315,15 +1312,14 @@ html:not(.dark) .nia-story-publish { background: #00cfff; color: #08182b; }
   gap: 8px;
   border: 0;
   border-radius: 11px;
-  background: var(--spark-teal);
-  color: white;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   padding: 0 16px;
   font-size: 11px;
   font-weight: 750;
   box-shadow: none;
 }
 .nia-story-composer .nia-story-publish:disabled { opacity: .48; cursor: not-allowed; }
-html:not(.dark) .nia-story-composer .nia-story-publish { background: var(--spark-teal); color: white; }
 .nia-story-composer button:focus-visible,
 .nia-story-composer select:focus-visible,
 .nia-story-composer textarea:focus-visible,
@@ -1816,4 +1812,31 @@ html:not(.dark) .nia-story-composer .nia-story-publish { background: var(--spark
   .nia-spark-camera__gallery-choice,
   .nia-spark-camera__record,
   .nia-spark-camera__glass { transition-duration: .01ms !important; }
+}
+
+/* Portal-safe fallbacks: composer/gallery may render outside .nk-community-v4. */
+.nia-story-composer,
+.nia-story-gallery {
+  --nia-story-viewer: #08182b;
+  --nia-story-surface: #0f243b;
+  --nia-story-surface-raised: #1a334e;
+}
+.nia-story-composer--destination .nia-story-composer__details,
+.nia-story-composer--destination .nia-story-composer__form { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.nia-story-composer--destination .nia-story-composer__details {
+  background:var(--spark-paper);
+  color:var(--spark-ink);
+}
+.nia-story-destination-card select,
+.nia-story-destination-card select option {
+  background-color:var(--spark-white, #fffef9);
+  color:var(--spark-ink, #193c3b);
+}
+.nia-story-destination-card select { min-width:0; text-overflow:ellipsis; color-scheme:light; }
+.nia-story-destination-card input[type="checkbox"],
+.nia-story-destination-card input[type="radio"] { accent-color: hsl(var(--primary)); }
+@media (max-width: 600px) {
+  .nia-story-composer--destination .nia-story-composer__details { overflow-x:hidden; }
+  .nia-story-destination-card { flex-wrap: wrap; }
+  .nia-story-destination-card select { max-width: 100%; flex: 1 1 100%; }
 }

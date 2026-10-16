@@ -79,7 +79,7 @@ describe("Moment camera-reel server contract", () => {
       readFile(queueFile, "utf8"),
     ]);
     expect(route).toMatch(/!isMomentCompositionStoryStatus\(story\.status\)/);
-    expect(route.match(/isMomentCompositionStatusVisibleToViewer\(/g)).toHaveLength(3);
+    expect(route.match(/isMomentCompositionStatusVisibleToViewer\(/g)).toHaveLength(5);
     expect(worker).toMatch(/isMomentCompositionStoryStatus\(story\.status\)/);
     expect(worker).toMatch(/isMomentCompositionStoryStatus\(composition\.story_status\)/);
     expect(queue).toMatch(/!isMomentCompositionStoryStatus\(story\.status\)/);

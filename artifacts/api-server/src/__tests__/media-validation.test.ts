@@ -87,6 +87,38 @@ process.stderr.write("partial file\\n");
     }
   });
 
+  it("measures live WebM packet timestamps when the recording has no duration header", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "niakofa-live-webm-test-"));
+    const fakeProbe = path.join(directory, "ffprobe.cjs");
+    const previous = process.env["FFPROBE_PATH"];
+    try {
+      await writeFile(fakeProbe, `#!${process.execPath}
+if (process.argv.includes("packet=pts_time,duration_time")) {
+  process.stdout.write("pts_time=0.000000|duration_time=0.040000\\n");
+  process.stdout.write("pts_time=0.960000|duration_time=0.040000\\n");
+} else {
+  process.stdout.write(JSON.stringify({streams:[{codec_type:"video",width:320,height:240}],format:{}}));
+}
+`, { flag: "wx", mode: 0o700 });
+      process.env["FFPROBE_PATH"] = fakeProbe;
+      const webm = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+      await expect(validateMediaBuffer(webm, "video", "video/webm;codecs=vp8")).resolves.toEqual({
+        width: 320, height: 240, duration_ms: 1000,
+      });
+      // A header alone must not substitute for an actual measurable timeline.
+      await writeFile(fakeProbe, `#!${process.execPath}
+if (!process.argv.includes("packet=pts_time,duration_time")) {
+  process.stdout.write(JSON.stringify({streams:[{codec_type:"video",width:320,height:240}],format:{}}));
+}
+`, { mode: 0o700 });
+      await expect(validateMediaBuffer(webm, "video", "video/webm")).rejects.toThrow("MEDIA_DURATION_INVALID");
+    } finally {
+      if (previous === undefined) delete process.env["FFPROBE_PATH"];
+      else process.env["FFPROBE_PATH"] = previous;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("accepts valid WebP VP8L and VP8 dimension headers", async () => {
     const vp8l = Buffer.alloc(25);
     Buffer.from("RIFF").copy(vp8l, 0);

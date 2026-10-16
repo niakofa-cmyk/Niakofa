@@ -67,6 +67,54 @@ function imageDimensions(buffer: Buffer, mimeType: string): { width: number; hei
   return null;
 }
 
+/** MediaRecorder's live WebM omits container duration. Measure actual packets,
+ * not a client-supplied duration, while keeping output memory and runtime bounded. */
+async function probePacketDuration(inputPath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const child = spawn(getMediaToolPaths().ffprobe, [
+      "-v", "error", "-i", inputPath,
+      "-show_entries", "packet=pts_time,duration_time", "-of", "compact=p=0:nk=0",
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    let pending = "";
+    let first = Infinity;
+    let end = -Infinity;
+    let invalid = false;
+    const timeout = setTimeout(() => { invalid = true; child.kill("SIGKILL"); }, 15_000);
+    const consume = (line: string) => {
+      let timestamp = NaN;
+      let duration = 0;
+      for (const field of line.split("|")) {
+        const [key, value] = field.split("=");
+        if (key === "pts_time") timestamp = Number(value);
+        if (key === "duration_time" && Number.isFinite(Number(value))) duration = Number(value);
+      }
+      if (Number.isFinite(timestamp) && duration >= 0) {
+        first = Math.min(first, timestamp);
+        end = Math.max(end, timestamp + duration);
+      }
+    };
+    child.stdout.on("data", (chunk: Buffer) => {
+      pending += chunk.toString("utf8");
+      let newline: number;
+      while ((newline = pending.indexOf("\n")) !== -1) {
+        if (newline > 4096) { invalid = true; child.kill("SIGKILL"); break; }
+        consume(pending.slice(0, newline));
+        pending = pending.slice(newline + 1);
+      }
+      if (pending.length > 4096) { invalid = true; child.kill("SIGKILL"); }
+    });
+    child.stderr.on("data", () => {});
+    child.on("error", () => { clearTimeout(timeout); resolve(null); });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code !== 0 || invalid) return resolve(null);
+      if (pending) consume(pending);
+      const milliseconds = Math.round((end - Math.min(0, first)) * 1000);
+      resolve(Number.isSafeInteger(milliseconds) && milliseconds > 0 ? milliseconds : null);
+    });
+  });
+}
+
 async function probeMedia(buffer: Buffer): Promise<{ width: number | null; height: number | null; duration_ms: number | null } | null> {
   let temporaryDirectory: string | null = null;
   try {
@@ -74,7 +122,7 @@ async function probeMedia(buffer: Buffer): Promise<{ width: number | null; heigh
     const inputPath = path.join(temporaryDirectory, "upload");
     await writeFile(inputPath, buffer, { flag: "wx", mode: 0o600 });
 
-    return await new Promise((resolve) => {
+    const metadata = await new Promise<{ width: number | null; height: number | null; duration_ms: number | null } | null>((resolve) => {
       const child = spawn(getMediaToolPaths().ffprobe, [
         "-v", "error", "-i", inputPath,
         "-show_entries", "stream=codec_type,width,height,duration:format=duration", "-of", "json",
@@ -123,6 +171,10 @@ async function probeMedia(buffer: Buffer): Promise<{ width: number | null; heigh
         } catch { resolve(null); }
       });
     });
+    if (metadata && metadata.duration_ms === null) {
+      metadata.duration_ms = await probePacketDuration(inputPath);
+    }
+    return metadata;
   } catch {
     return null;
   } finally {

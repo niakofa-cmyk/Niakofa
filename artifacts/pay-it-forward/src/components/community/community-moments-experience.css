@@ -574,6 +574,15 @@
 .nia-moments--fullbleed .nia-moments__context > section[aria-label="Weekly community prompt"] {
   padding: 14px;
 }
+.nia-moments--fullbleed .nia-moments__weekly-content {
+  flex-direction:column;
+  align-items:stretch;
+}
+.nia-moments--fullbleed .nia-moments__weekly-content > div { min-width:0; }
+.nia-moments--fullbleed .nia-moments__weekly-content button {
+  min-width:0;
+  white-space:normal;
+}
 .nia-moments--fullbleed .nia-community-stories-shell {
   width: 100%;
   max-width: none;

@@ -1,5 +1,5 @@
 /* Full-screen Media Studio. Cyan-on-navy to match Moments. New classes only (nk-studio*); legacy nia-story-* untouched. */
-.nk-studio { --s-bg:#08182b; --s-raise:#0f243b; --s-cyan:#22d3ee; --s-primary:hsl(var(--primary)); --s-primary-ink:hsl(var(--primary-foreground)); --s-ink:#f6f9fc; --s-dim:rgba(246,249,252,.72);
+.nk-studio { --s-bg:#08182b; --s-raise:#0f243b; --s-cyan:hsl(var(--primary)); --s-primary:hsl(var(--primary)); --s-primary-ink:hsl(var(--primary-foreground)); --s-ink:#f6f9fc; --s-dim:rgba(246,249,252,.72);
   position:fixed; inset:0; z-index:120; width:100vw; height:100dvh; overflow:hidden; background:#000; color:var(--s-ink);
   font-family:inherit; touch-action:manipulation; overscroll-behavior:contain; user-select:none; -webkit-user-select:none; }
 .nk-studio__camera { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000; }
@@ -26,7 +26,7 @@
 .nk-studio__shutter.is-recording > span { width:30px; height:30px; border-radius:8px; }
 .nk-studio__ring { position:absolute; inset:-8px; width:calc(100% + 16px); height:calc(100% + 16px); transform:rotate(-90deg); } .nk-studio__ring circle { fill:none; stroke:var(--s-cyan); stroke-width:4; stroke-linecap:round; }
 .nk-studio__modes { display:flex; justify-content:center; gap:6px; } .nk-studio__modes button { display:inline-flex; align-items:center; gap:6px; min-height:36px; padding:0 14px; border-radius:999px; font-size:13px; font-weight:700; color:var(--s-dim); background:rgba(8,24,43,.55); }
-.nk-studio__modes button.is-on { background:#fff; color:#04202c; }
+.nk-studio__modes button.is-on { background:var(--s-primary); color:var(--s-primary-ink); }
 .nk-studio__notice { margin:0 16px; padding:8px 12px; border-radius:12px; background:rgba(8,24,43,.82); font-size:13px; font-weight:600; }
 .nk-studio__center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; font-weight:700; background:rgba(8,24,43,.55); }
 .nk-studio__center--card { padding:32px; text-align:center; }
@@ -47,7 +47,7 @@
 .nk-studio__sheet { position:absolute; left:0; right:0; bottom:0; z-index:5; display:flex; flex-direction:column; gap:12px; max-height:80dvh; overflow:auto; padding:10px 16px max(18px,env(safe-area-inset-bottom)); border-radius:24px 24px 0 0; background:var(--s-bg); border-top:1px solid rgba(255,255,255,.12); box-shadow:0 -20px 50px rgba(0,0,0,.5); }
 .nk-studio__sheet h2 { margin:0; font-size:20px; font-weight:800; } .nk-studio__grab { align-self:center; width:40px; height:4px; border-radius:2px; background:rgba(255,255,255,.3); }
 .nk-studio__dests { display:grid; gap:8px; } .nk-studio__dests button { display:flex; flex-direction:column; gap:2px; align-items:flex-start; text-align:left; min-height:56px; padding:10px 14px; border-radius:14px; border:1.5px solid rgba(255,255,255,.14); background:var(--s-raise); color:#fff; }
-.nk-studio__dests button.is-on { border-color:var(--s-cyan); background:rgba(34,211,238,.12); } .nk-studio__dests button:disabled { opacity:.55; } .nk-studio__dests small { font-size:12px; color:var(--s-dim); }
+.nk-studio__dests button.is-on { border-color:var(--s-cyan); background:hsl(var(--primary) / .12); } .nk-studio__dests button:disabled { opacity:.55; } .nk-studio__dests small { font-size:12px; color:var(--s-dim); }
 .nk-studio__listing { display:grid; gap:6px; font-size:13px; font-weight:700; }
 .nk-studio__listing select { min-height:44px; padding:0 12px; border:1px solid rgba(255,255,255,.18); border-radius:12px; background:var(--s-raise); color:#fff; }
 .nk-studio__offer { display:flex; gap:10px; align-items:flex-start; padding:12px; border-radius:14px; background:var(--s-raise); font-size:13px; line-height:1.4; }
@@ -72,3 +72,9 @@
 .nk-studio__cover { display:flex; align-items:center; gap:12px; } .nk-studio__cover video { width:54px; height:96px; border-radius:10px; object-fit:cover; background:#000; } .nk-studio__cover input { flex:1; min-height:44px; accent-color:var(--s-cyan); }
 .nk-studio__icon.has-flag { box-shadow:0 0 0 2px #f59e0b; }
 .nk-studio__flag { position:absolute; top:3px; right:3px; width:10px; height:10px; border-radius:999px; background:#f59e0b; border:2px solid var(--s-bg); }
+
+/* Native controls keep the immersive dark palette, including outside the app shell. */
+.nk-studio { color-scheme: dark; }
+.nk-studio__listing select option { background:#0f243b; color:#f6f9fc; }
+.nk-studio__dests button.is-on { color:#fff; }
+.nk-studio__dests button.is-on small { color:var(--s-ink); }

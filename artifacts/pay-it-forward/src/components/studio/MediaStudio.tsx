@@ -144,6 +144,8 @@ export function MediaStudio(props: MediaStudioProps) {
           if (captionsVtt) dispatch({ type: "captions", id: item.id, vtt: captionsVtt });
         });
         setWorkingSetReady(true);
+      }).catch((reason: unknown) => {
+        if (active) dispatch({ type: "selectionError", message: reason instanceof Error ? reason.message : "Saved media could not be opened. Choose the original file again." });
       });
     } else {
       setWorkingSetReady(true);
@@ -231,6 +233,9 @@ export function MediaStudio(props: MediaStudioProps) {
       const items = await Promise.all(files.slice(0, STUDIO_MAX_ITEMS - state.items.length).map((file) => itemFromFile(file, source, measuredMs)));
       // Photos and library picks go to review; chained camera clips stay on the live camera.
       dispatch({ type: "add", items, goReview: source === "gallery" || items.some((item) => item.kind === "photo") });
+      setWorkingSetReady(true);
+    } catch (reason) {
+      dispatch({ type: "selectionError", message: reason instanceof Error ? reason.message : "This file could not be opened. Choose the original photo or video." });
     } finally { setAdding(false); }
   };
 

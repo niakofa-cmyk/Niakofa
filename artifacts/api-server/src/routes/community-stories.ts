@@ -494,7 +494,8 @@ async function readableStoryVideoMedia(mediaId: number, userId: number) {
     .where(eq(communityStoryMediaTable.id, mediaId))
     .limit(1);
   if (!row || row.media_type !== "video" || !row.mime_type.startsWith("video/")
-    || row.status !== "published"
+    || !isMomentCompositionStatusVisibleToViewer(row.status, row.author_user_id, userId)
+    || row.media_asset_id !== null && row.asset_status !== "ready"
     || !(await viewerCanReadRetainedStory(userId, row))) return null;
   if (!isLinkedStoryVideoAssetReady({
     linked: row.exchange_listing_id !== null,
@@ -1989,7 +1990,7 @@ router.get("/community/stories/media/:id", requireAuth, requireApproved, async (
     .leftJoin(mediaAssetsTable, eq(mediaAssetsTable.id, communityStoryMediaTable.media_asset_id))
     .where(eq(communityStoryMediaTable.id, mediaId))
     .limit(1);
-  if (!row || row.status !== "published"
+  if (!row || !isMomentCompositionStatusVisibleToViewer(row.status, row.author_user_id, req.authenticatedUserId!)
       || row.media_asset_id !== null && row.asset_status !== "ready"
       || !(await viewerCanReadRetainedStory(req.authenticatedUserId!, row))) {
     return res.status(404).json({ error: "Story media not found." });

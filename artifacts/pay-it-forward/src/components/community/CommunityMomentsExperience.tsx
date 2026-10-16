@@ -603,7 +603,8 @@ export function CommunityMomentsExperience({
   }, [flushCurrentWatchContribution]);
 
   useEffect(() => {
-    if (!activeSpark || viewedIdsRef.current.has(activeSpark.id)) return;
+    if (!activeSpark || activeSpark.status && activeSpark.status !== "published"
+      || viewedIdsRef.current.has(activeSpark.id)) return;
     viewedIdsRef.current.add(activeSpark.id);
     trackCommunityContent("community_spark_viewed", {
       spark_id: activeSpark.id,
@@ -700,7 +701,8 @@ export function CommunityMomentsExperience({
   };
 
   useEffect(() => {
-    if (!activeSpark || metricsById[activeSpark.id]) return;
+    if (!activeSpark || activeSpark.status && activeSpark.status !== "published"
+      || metricsById[activeSpark.id]) return;
     let cancelled = false;
     void getStoryMetrics(activeSpark.id)
       .then((metrics) => {
@@ -1073,7 +1075,7 @@ export function CommunityMomentsExperience({
             <button type="button" onClick={() => void weeklyChallengeQuery.refetch()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold hover:bg-muted" data-testid="button-retry-weekly-prompt"><RefreshCw className="h-4 w-4" aria-hidden="true" /> Retry</button>
           </div>
         ) : weeklyChallengeQuery.data?.challenge ? (
-          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="nia-moments__weekly-content relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="max-w-2xl">
               <p className="text-xs font-bold uppercase tracking-[.15em] text-primary">A small prompt for the week</p>
               <h2 className="mt-1 text-lg font-bold tracking-tight sm:text-xl" data-testid="text-weekly-prompt">{weeklyChallengeQuery.data.challenge.prompt}</h2>
