@@ -36,6 +36,12 @@ const accountBState = process.env.MATRIX_USER_B_STATE;
 const marker = process.env.MATRIX_STUDIO_FIXTURE_MARKER ?? "";
 const jpegPath = process.env.MATRIX_STUDIO_JPEG_PATH ?? "";
 const mp4Path = process.env.MATRIX_STUDIO_MP4_PATH ?? "";
+// A harmless reserved-domain URL deterministically enters the real moderation
+// queue. Ordinary captions are correctly auto-published and cannot prove the
+// owner-only pending-review boundary.
+const reviewSignal = "https://example.invalid/moments-runtime-review";
+
+test.use({ actionTimeout: 15_000, navigationTimeout: 30_000 });
 
 async function readFixtureUser(statePath: string): Promise<FixtureUser> {
   const state = JSON.parse(await readFile(statePath, "utf8")) as MatrixStorageState;
@@ -72,7 +78,8 @@ async function describeSelectedMedia(page: Page, description: string): Promise<v
   const detailsButton = page.getByRole("button", { name: /description \(required\)/i });
   await expect(detailsButton).toBeVisible();
   await detailsButton.click();
-  const details = page.getByRole("group", { name: /details · (photo|video) 1/i });
+  const details = page.getByRole("group", { name: /^details for (photo|video) 1$/i });
+  await expect(details).toBeVisible();
   await details.getByLabel(/description \(required\)/i).fill(description);
   await details.getByRole("button", { name: "Done" }).click();
 }
@@ -219,9 +226,8 @@ studioRuntimeSuite("real local Media Studio upload and playback regression", () 
     if (!accountAState || !accountBState) throw new Error("The isolated A/B browser states are required.");
     const { context, page } = await openAccount(browser, accountAState);
     const captions = {
-      photo: `${marker} photo`,
-      mp4: `${marker} h264`,
-      webm: `${marker} mediarecorder`,
+      mp4: `${marker} h264 ${reviewSignal}`,
+      webm: `${marker} mediarecorder ${reviewSignal}`,
     };
     const createdStoryIds: number[] = [];
 
@@ -239,7 +245,7 @@ studioRuntimeSuite("real local Media Studio upload and playback regression", () 
       await expect.poll(() => page.getByAltText("Selected photo").evaluate(
         (image: HTMLImageElement) => image.complete && image.naturalWidth > 0,
       )).toBe(true);
-      const recoveredCaption = `${marker} draft survives invalid selection`;
+      const recoveredCaption = `${marker} draft survives invalid selection ${reviewSignal}`;
       await page.getByLabel("Caption").fill(recoveredCaption);
       await page.getByRole("button", { name: "Back to camera" }).click();
       let mediaUploadInitializations = 0;
@@ -261,7 +267,7 @@ studioRuntimeSuite("real local Media Studio upload and playback regression", () 
       await expect(page.getByRole("button", { name: /Next, review 1 items/ })).toBeVisible();
       await page.getByRole("button", { name: /Next, review 1 items/ }).click();
       await expect(page.getByLabel("Caption")).toHaveValue(recoveredCaption);
-      await expect(page.getByRole("button", { name: "photo 1" })).toBeVisible();
+      await expect(page.getByRole("option", { name: "photo 1", exact: true })).toBeVisible();
       createdStoryIds.push(await publishCurrentMoment(page, recoveredCaption, "A bright JPEG photo uploaded through Media Studio."));
       await expectPhotoDecoded(page, createdStoryIds[0]);
       const photoStory = await getStory(page, recoveredCaption);

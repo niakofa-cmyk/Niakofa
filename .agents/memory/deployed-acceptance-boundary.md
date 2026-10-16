@@ -37,7 +37,7 @@ Do not repeat a production E2E scenario that creates or changes records solely t
 
 **How to apply:** Record the run date, full served commit, source of the browser result, preflight outcome, and cleanup behavior. Verify deployment identity and readiness separately. Do not set production mutation gates or rerun the scenario without explicit authorization and approved disposable accounts/states.
 
-Exchange acceptance uses only A/B/C: A is the seller/publisher, B is the same-community buyer/reader, and C is the cross-community privacy viewer. There is no D account; the user explicitly confirmed “D does not exist! Only ABC.” Do not request or create a fourth account. Synthetic local fixtures are not production identities. Physical iOS Safari and Android Chrome evidence is required for device certification.
+Exchange acceptance uses only A/B/C: A is the approved admin and seller/publisher, B is the approved helper and same-community buyer/reader, and C is the cross-community privacy viewer. There is no D account; the user explicitly confirmed “D does not exist! Only ABC.” Do not request or create a fourth account. Synthetic local fixtures are not production identities. Physical iOS Safari and Android Chrome evidence is required for device certification.
 
 **Why:** The user corrected the mistaken D label and confirmed the documented B role. They require renewed disposable-account authorization, the documented role/community boundaries, and a blocked certification status for every unresolved critical path.
 

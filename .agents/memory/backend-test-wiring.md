@@ -80,3 +80,15 @@ exception to Jest's network boundary could silently reuse workspace services.
 **How to apply:** Gate the exception on the dedicated acceptance flag and reject
 non-loopback endpoints in test setup. Keep the standard mocked/unit-test path
 fail-closed.
+
+For real browser upload privacy acceptance, enter pending review through the
+real moderation policy using a harmless reserved-domain fixture signal; do not
+force a database status or mock moderation merely to satisfy the assertion.
+
+**Why:** Ordinary benign captions were correctly auto-published, so a test
+expecting every upload to remain pending stopped before its actual privacy
+checks. Locator mismatches had previously hidden that fixture-policy mismatch.
+
+**How to apply:** Separate published-content persistence from pending-review
+privacy scenarios. Keep the exact fixture captions used for owner-scoped cleanup
+aligned with those submitted through the browser.

@@ -160,8 +160,10 @@ app.use(parseAuth);
 
 // ── Rate limiting ──────────────────────────────────────────────────────────────
 // The legacy generalApiLimiter remains a route-level no-op for compatibility;
-// this is the single effective global application of the API limiter.
-app.use(apiTrafficLimiter);
+// this is the single effective application of the API limiter. SPA documents
+// and hashed assets do not carry Bearer headers: counting them against the
+// anonymous API bucket can return JSON 429s for CSS/JS and crash navigation.
+app.use("/api", apiTrafficLimiter);
 
 // ── Raw body parsers for webhook endpoints ────────────────────────────────────
 // These MUST be mounted BEFORE express.json() so the raw body is preserved

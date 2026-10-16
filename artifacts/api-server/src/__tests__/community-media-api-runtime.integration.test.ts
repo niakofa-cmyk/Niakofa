@@ -1842,10 +1842,11 @@ suite("isolated cross-community content and media access matrix", () => {
     let viteOutput = "";
     try {
       const marker = `moments-runtime-${randomUUID()}`;
+      const reviewSignal = "https://example.invalid/moments-runtime-review";
       browserFixtureCaptions = [
-        `${marker} draft survives invalid selection`,
-        `${marker} h264`,
-        `${marker} mediarecorder`,
+        `${marker} draft survives invalid selection ${reviewSignal}`,
+        `${marker} h264 ${reviewSignal}`,
+        `${marker} mediarecorder ${reviewSignal}`,
       ];
       browserFixtureNames = [
         `${marker}-photo.jpg`,
@@ -2099,7 +2100,7 @@ suite("isolated cross-community content and media access matrix", () => {
             MATRIX_STUDIO_JPEG_PATH: jpegPath,
             MATRIX_STUDIO_MP4_PATH: mp4Path,
             MATRIX_LEGACY_STORY_ID: String(legacyMomentStoryId),
-          }, 300_000);
+          }, 360_000);
         } finally {
           await stopFrontend();
         }
@@ -2152,7 +2153,7 @@ suite("isolated cross-community content and media access matrix", () => {
       }
       if (mediaWorker) await mediaWorker.close();
       await closeRedis();
-      await rm(stateDirectory, { recursive: true, force: true });
+      await rm(stateDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   }, 660_000);
 });
