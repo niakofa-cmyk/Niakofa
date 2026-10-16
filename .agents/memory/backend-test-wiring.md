@@ -68,3 +68,15 @@ mutations in the wrong environment.
 disposable PostgreSQL cluster, migrate it, pass its connection through the
 test-only override, and keep exact-ID fixture cleanup. Never use a production
 connection or assume a passing policy fixture certifies production media.
+
+Only an explicitly opted-in browser acceptance suite may keep a real Redis
+connection in Jest. Validate both its Redis URL and database URL as loopback
+targets before importing application modules; all ordinary Jest suites must
+continue to blank ambient Redis values.
+
+**Why:** Real BullMQ/FFmpeg acceptance needs an actual queue, but a global
+exception to Jest's network boundary could silently reuse workspace services.
+
+**How to apply:** Gate the exception on the dedicated acceptance flag and reject
+non-loopback endpoints in test setup. Keep the standard mocked/unit-test path
+fail-closed.

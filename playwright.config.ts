@@ -18,6 +18,7 @@ export default defineConfig({
   },
   fullyParallel: false,
   reporter: process.env.CI ? [["line"]] : "list",
+  outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR,
   use: {
     baseURL: configuredBaseUrl,
     storageState: process.env.USER_A_STATE || undefined,

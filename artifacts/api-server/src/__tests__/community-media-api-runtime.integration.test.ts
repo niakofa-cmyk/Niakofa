@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { createServer as createTcpServer } from "node:net";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,7 +12,7 @@ import { pool } from "@workspace/db";
 import { parseAuth, signTokenById } from "../middlewares/auth";
 import { mediaUploadParser } from "../lib/media-upload-parser";
 import { isCloudStorageConfigured, deleteAssetStrict, putAsset, UPLOADS_BASE } from "../lib/storage";
-import { setMediaProcessingQueueForTest } from "../lib/queue";
+import { closeRedis, setMediaProcessingQueueForTest, waitForRedisReady } from "../lib/queue";
 import audioCirclesRouter from "../routes/audio-circles";
 import communityExchangeRouter from "../routes/community-exchange";
 import communityHubFeedRouter from "../routes/community-hub-feed";
@@ -22,6 +23,7 @@ import gratitudeRouter from "../routes/gratitude";
 import griotRouter from "../routes/griot";
 import mediaAssetsRouter from "../routes/media-assets-v21";
 import { processMediaJob, type MediaJobData } from "../workers/media-process-worker";
+import { startMediaProcessWorker } from "../workers/media-process-worker";
 
 const integrationEnabled = process.env.COMMUNITY_MEDIA_API_RUNTIME_TEST === "1";
 const suite = integrationEnabled ? describe : describe.skip;
@@ -83,11 +85,38 @@ async function createSyntheticImage(): Promise<Buffer> {
   }
 }
 
+async function createSyntheticJpeg(): Promise<Buffer> {
+  const directory = await mkdtemp(path.join(tmpdir(), "niakofa-moments-jpeg-"));
+  const outputPath = path.join(directory, "moment.jpg");
+  try {
+    execFileSync(process.env.FFMPEG_PATH?.trim() || "ffmpeg", [
+      "-nostdin",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=orange:s=320x240",
+      "-frames:v",
+      "1",
+      "-q:v",
+      "2",
+      "-y",
+      outputPath,
+    ], { stdio: "ignore" });
+    return await readFile(outputPath);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 suite("isolated cross-community content and media access matrix", () => {
   const app = express();
   app.use(express.json());
   app.use(parseAuth);
   app.use("/media-assets/:id/upload", mediaUploadParser);
+  app.use("/api/media-assets/:id/upload", mediaUploadParser);
   // Match the application-wide compatibility middleware so canonical Spiral
   // paths reach the existing Circle lifecycle and LiveKit token handlers.
   app.use((req, _res, next) => {
@@ -105,6 +134,96 @@ suite("isolated cross-community content and media access matrix", () => {
   app.use(circleMediaTokenRouter);
   app.use(mediaAssetsRouter);
   app.use(familyRouter);
+  // The actual web app sends same-origin /api requests through Vite. Mount the
+  // same production routers at that prefix as well as their direct test paths.
+  app.use("/api", (req, _res, next) => {
+    req.url = req.url
+      .replace(/^\/audio-spiral-sessions(?=\/|$)/, "/audio-circle-sessions")
+      .replace(/^\/audio-spirals(?=\/|$)/, "/audio-circles");
+    next();
+  });
+  app.use("/api", communityStoriesRouter);
+  app.use("/api", communityExchangeRouter);
+  app.use("/api", communityHubFeedRouter);
+  app.use("/api", gratitudeRouter);
+  app.use("/api", griotRouter);
+  app.use("/api", audioCirclesRouter);
+  app.use("/api", circleMediaTokenRouter);
+  app.use("/api", mediaAssetsRouter);
+  app.use("/api", familyRouter);
+  // The browser needs only the authenticated shell endpoints below; all
+  // Moments, upload, storage, and playback requests continue to the real API
+  // routers and real database-backed handlers.
+  app.get("/users/me", async (req, res) => {
+    const userId = req.authenticatedUserId;
+    if (!userId) return res.status(401).json({ error: "Authentication required." });
+    const { rows } = await pool.query(
+      `SELECT id, name, email, approval_status, community_id
+       FROM users WHERE id = $1 LIMIT 1`,
+      [userId],
+    );
+    const user = rows[0];
+    if (!user) return res.status(404).json({ error: "User not found." });
+    return res.json({
+      ...user,
+      username: null,
+      avatar_url: null,
+      panic_contacts: [],
+      trust_score: 0,
+      help_count: 0,
+      is_helper: false,
+      helper_status: null,
+      helper_mode_active: false,
+      is_suspended: false,
+    });
+  });
+  app.get("/users/:id/settings", (_req, res) => res.json({}));
+  app.get("/users/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    const { rows } = await pool.query(
+      `SELECT id, name, email, approval_status, community_id
+       FROM users WHERE id = $1 LIMIT 1`,
+      [id],
+    );
+    return rows[0] ? res.json(rows[0]) : res.status(404).json({ error: "User not found." });
+  });
+  app.get("/requests", (_req, res) => res.json({ requests: [] }));
+  app.get("/stripe/connect/status/:id", (_req, res) => res.json({ connected: false }));
+  app.get("/api/users/me", async (req, res) => {
+    const userId = req.authenticatedUserId;
+    if (!userId) return res.status(401).json({ error: "Authentication required." });
+    const { rows } = await pool.query(
+      `SELECT id, name, email, approval_status, community_id
+       FROM users WHERE id = $1 LIMIT 1`,
+      [userId],
+    );
+    const user = rows[0];
+    if (!user) return res.status(404).json({ error: "User not found." });
+    return res.json({
+      ...user,
+      username: null,
+      avatar_url: null,
+      panic_contacts: [],
+      trust_score: 0,
+      help_count: 0,
+      is_helper: false,
+      helper_status: null,
+      helper_mode_active: false,
+      is_suspended: false,
+    });
+  });
+  app.get("/api/users/:id/settings", (_req, res) => res.json({}));
+  app.get("/api/users/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    const { rows } = await pool.query(
+      `SELECT id, name, email, approval_status, community_id
+       FROM users WHERE id = $1 LIMIT 1`,
+      [id],
+    );
+    return rows[0] ? res.json(rows[0]) : res.status(404).json({ error: "User not found." });
+  });
+  app.get("/api/requests", (_req, res) => res.json({ requests: [] }));
+  app.get("/api/stripe/connect/status/:id", (_req, res) => res.json({ connected: false }));
 
   let authorId: number | undefined;
   let sameCommunityReaderId: number | undefined;
@@ -118,6 +237,7 @@ suite("isolated cross-community content and media access matrix", () => {
   let authorHubName = "";
   let readerHubName = "";
   let communityStoryId: number | undefined;
+  let legacyMomentStoryId: number | undefined;
   let videoStoryId: number | undefined;
   let momentCompositionStoryId: number | undefined;
   let videoUploadMarker: string | undefined;
@@ -136,6 +256,8 @@ suite("isolated cross-community content and media access matrix", () => {
   let readerToken = "";
   let pendingMomentCaption = "";
   let pendingMomentSourceIds: number[] = [];
+  let browserFixtureCaptions: string[] = [];
+  let browserFixtureNames: string[] = [];
   const originalMediaPlatformFlag = process.env.MEDIA_PLATFORM_V21;
 
   async function withMediaPlatformEnabled<T>(work: () => Promise<T>): Promise<T> {
@@ -181,6 +303,34 @@ suite("isolated cross-community content and media access matrix", () => {
     };
 
     const cleanupMediaAssetIds = new Set(mediaAssetIds);
+    const cleanupStoryIds = new Set<number>(
+      [videoStoryId, momentCompositionStoryId, communityStoryId, legacyMomentStoryId]
+        .filter((id): id is number => id !== undefined),
+    );
+    if (authorId && browserFixtureCaptions.length) {
+      try {
+        const { rows: browserStories } = await pool.query<{ id: number }>(
+          `SELECT id FROM community_stories
+           WHERE author_user_id = $1 AND caption = ANY($2::text[])`,
+          [authorId, browserFixtureCaptions],
+        );
+        browserStories.forEach((story) => cleanupStoryIds.add(story.id));
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (authorId && browserFixtureNames.length) {
+      try {
+        const { rows: browserAssets } = await pool.query<{ id: number }>(
+          `SELECT id FROM media_assets
+           WHERE owner_user_id = $1 AND original_name = ANY($2::text[])`,
+          [authorId, browserFixtureNames],
+        );
+        browserAssets.forEach((asset) => cleanupMediaAssetIds.add(asset.id));
+      } catch (error) {
+        errors.push(error);
+      }
+    }
     if (videoUploadMarker && authorId) {
       try {
         const { rows } = await pool.query<{ id: number }>(
@@ -220,14 +370,17 @@ suite("isolated cross-community content and media access matrix", () => {
         errors.push(error);
       }
     }
-    if (videoStoryId) {
-      await attempt("DELETE FROM community_stories WHERE id = $1", [videoStoryId]);
+    if (cleanupStoryIds.size) {
+      await attempt(
+        "DELETE FROM community_stories WHERE author_user_id = $1 AND id = ANY($2::integer[])",
+        [authorId, [...cleanupStoryIds]],
+      );
     }
-    if (momentCompositionStoryId) {
-      await attempt("DELETE FROM community_stories WHERE id = $1", [momentCompositionStoryId]);
-    }
-    for (const mediaAssetId of mediaAssetIds) {
-      await attempt("DELETE FROM media_assets WHERE id = $1", [mediaAssetId]);
+    if (cleanupMediaAssetIds.size) {
+      await attempt(
+        "DELETE FROM media_assets WHERE id = ANY($1::integer[])",
+        [[...cleanupMediaAssetIds]],
+      );
     }
     if (griotStoryIds.length) {
       await attempt("DELETE FROM griot_stories WHERE id = ANY($1::integer[])", [griotStoryIds]);
@@ -1675,22 +1828,33 @@ suite("isolated cross-community content and media access matrix", () => {
     }
   });
 
-  it("runs opt-in browser acceptance with the same disposable A/B/C accounts", async () => {
+  it("runs opt-in browser acceptance with real local media processing", async () => {
     if (process.env.COMMUNITY_MEDIA_BROWSER_ACCEPTANCE !== "1") return;
     if (!authorId || !sameCommunityReaderId || !readerId || !momentCompositionStoryId) {
       throw new Error("The matrix browser check requires the A/B/C and pending stitch fixtures.");
     }
     expect(pendingMomentCaption).toMatch(/^Pending stitch fixture /);
 
-    const baseUrl = process.env.COMMUNITY_MEDIA_BROWSER_BASE_URL?.trim()
-      || "http://127.0.0.1:18848";
-    const parsedBaseUrl = new URL(baseUrl);
-    expect(parsedBaseUrl.protocol).toBe("http:");
-    expect(["127.0.0.1", "localhost", "::1"]).toContain(parsedBaseUrl.hostname);
-
     const stateDirectory = await mkdtemp(path.join(tmpdir(), "niakofa-matrix-browser-"));
     let browserServer: ReturnType<typeof app.listen> | undefined;
+    let viteServer: ReturnType<typeof spawn> | undefined;
+    let mediaWorker: Awaited<ReturnType<typeof startMediaProcessWorker>> = null;
+    let viteOutput = "";
     try {
+      const marker = `moments-runtime-${randomUUID()}`;
+      browserFixtureCaptions = [
+        `${marker} draft survives invalid selection`,
+        `${marker} h264`,
+        `${marker} mediarecorder`,
+      ];
+      browserFixtureNames = [
+        `${marker}-photo.jpg`,
+        `${marker}-h264.mp4`,
+        `${marker}-mediarecorder.webm`,
+      ];
+      // These exact captions and source names scope cleanup to this browser
+      // run, including partial uploads if the browser exits early.
+
       const { rows: users } = await pool.query<{
         id: number;
         name: string;
@@ -1703,7 +1867,7 @@ suite("isolated cross-community content and media access matrix", () => {
         [[authorId, sameCommunityReaderId, readerId]],
       );
       const usersById = new Map(users.map((user) => [user.id, user]));
-      const writeState = async (label: string, id: number, token: string) => {
+      const writeState = async (label: string, id: number, token: string, origin: string) => {
         const fixtureUser = usersById.get(id);
         if (!fixtureUser || fixtureUser.approval_status !== "approved") {
           throw new Error(`Matrix Account ${label} is not an approved fixture.`);
@@ -1720,7 +1884,7 @@ suite("isolated cross-community content and media access matrix", () => {
         const state = {
           cookies: [],
           origins: [{
-            origin: parsedBaseUrl.origin,
+            origin: new URL(origin).origin,
             localStorage: [
               { name: "niakofa_token", value: token },
               { name: "niakofa_user", value: JSON.stringify(user) },
@@ -1734,11 +1898,36 @@ suite("isolated cross-community content and media access matrix", () => {
         );
       };
 
+      const jpegPath = path.join(stateDirectory, browserFixtureNames[0]);
+      const mp4Path = path.join(stateDirectory, browserFixtureNames[1]);
       await Promise.all([
-        writeState("A", authorId, authorToken),
-        writeState("B", sameCommunityReaderId, sameCommunityReaderToken),
-        writeState("C", readerId, readerToken),
+        writeFile(jpegPath, await createSyntheticJpeg(), { mode: 0o600 }),
+        writeFile(mp4Path, await createSyntheticVideo(), { mode: 0o600 }),
       ]);
+
+      const { rows: legacyStories } = await pool.query<{ id: number }>(
+        `INSERT INTO community_stories
+           (author_user_id, community_id, caption, audience, status, expires_at)
+         VALUES ($1, $2, 'Legacy color compatibility check', 'community', 'published', NOW() + INTERVAL '1 day')
+         RETURNING id`,
+        [authorId, authorCommunityId],
+      );
+      legacyMomentStoryId = legacyStories[0].id;
+      await pool.query(
+        `INSERT INTO community_story_elements (story_id, type, payload, z_index)
+         VALUES
+           ($1, 'background', $2::jsonb, 0),
+           ($1, 'text', $3::jsonb, 1)`,
+        [
+          legacyMomentStoryId,
+          JSON.stringify({ color: "#123456" }),
+          JSON.stringify({
+            text: "Legacy color compatibility check",
+            color: "#fefefe",
+            font_size: 24,
+          }),
+        ],
+      );
 
       browserServer = app.listen(0, "127.0.0.1");
       await new Promise<void>((resolve, reject) => {
@@ -1750,17 +1939,121 @@ suite("isolated cross-community content and media access matrix", () => {
         throw new Error("The local matrix API fixture server did not bind a TCP port.");
       }
 
+      await waitForRedisReady();
+      mediaWorker = await startMediaProcessWorker();
+      if (!mediaWorker) {
+        throw new Error("The real BullMQ media worker did not start on disposable local Redis.");
+      }
+      await mediaWorker.waitUntilReady();
+
       const workspaceRoot = path.resolve(process.cwd(), "../..");
       const playwrightCli = path.join(workspaceRoot, "node_modules/.bin/playwright");
+      const viteCli = path.join(workspaceRoot, "artifacts/pay-it-forward/node_modules/.bin/vite");
       if (!existsSync(playwrightCli)) {
         throw new Error("The repository Playwright CLI is unavailable for matrix browser acceptance.");
       }
-      const browserEnv: NodeJS.ProcessEnv = {
+      if (!existsSync(viteCli)) {
+        throw new Error("The repository Vite CLI is unavailable for isolated browser acceptance.");
+      }
+      const reserveLoopbackPort = async (): Promise<number> => {
+        const probe = createTcpServer();
+        await new Promise<void>((resolve, reject) => {
+          probe.once("error", reject);
+          probe.listen(0, "127.0.0.1", resolve);
+        });
+        const port = (probe.address() as { port: number }).port;
+        await new Promise<void>((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
+        return port;
+      };
+      const startFrontend = async (studioV2: boolean): Promise<string> => {
+        const port = await reserveLoopbackPort();
+        const url = `http://127.0.0.1:${port}`;
+        const viteEnv: NodeJS.ProcessEnv = {
+          ...process.env,
+          NODE_ENV: "development",
+          PORT: String(port),
+          VITE_API_PROXY_TARGET: `http://127.0.0.1:${address.port}`,
+          VITE_MEDIA_STUDIO_V2: studioV2 ? "true" : "false",
+        };
+        delete viteEnv.REPL_ID;
+        viteServer = spawn(
+          viteCli,
+          ["--config", "vite.config.ts", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
+          { cwd: path.join(workspaceRoot, "artifacts/pay-it-forward"), env: viteEnv, stdio: ["ignore", "pipe", "pipe"] },
+        );
+        viteServer.stdout?.on("data", (chunk: Buffer) => { viteOutput += chunk.toString(); });
+        viteServer.stderr?.on("data", (chunk: Buffer) => { viteOutput += chunk.toString(); });
+        for (let attempt = 0; attempt < 90; attempt += 1) {
+          if (viteServer.exitCode !== null) {
+            throw new Error(`The isolated Vite server exited before ready.\n${viteOutput}`);
+          }
+          try {
+            const response = await fetch(`${url}/community/moments`, {
+              signal: AbortSignal.timeout(1_000),
+            });
+            if (response.ok) return url;
+          } catch {
+            // Vite may still be compiling its dependency graph.
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        throw new Error(`The isolated Vite server did not become ready.\n${viteOutput}`);
+      };
+      const stopFrontend = async () => {
+        const child = viteServer;
+        viteServer = undefined;
+        if (!child || child.exitCode !== null) return;
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            child.kill("SIGKILL");
+            resolve();
+          }, 8_000);
+          child.once("close", () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+          child.kill("SIGTERM");
+        });
+      };
+      const runBrowserSpec = async (
+        specPath: string,
+        browserEnv: NodeJS.ProcessEnv,
+        timeoutMs: number,
+      ) => new Promise<void>((resolve, reject) => {
+        let stdout = "";
+        let stderr = "";
+        let timedOut = false;
+        const child = spawn(
+          playwrightCli,
+          ["test", specPath, "--workers=1", "--reporter=line"],
+          { cwd: workspaceRoot, env: browserEnv, stdio: ["ignore", "pipe", "pipe"] },
+        );
+        const timeout = setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGKILL");
+        }, timeoutMs);
+        child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+        child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+        child.once("error", (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+        child.once("close", (code) => {
+          clearTimeout(timeout);
+          if (stdout) process.stdout.write(stdout);
+          if (stderr) process.stderr.write(stderr);
+          if (timedOut) reject(new Error(`Browser acceptance exceeded its ${timeoutMs / 1000}-second timeout.`));
+          else if (code !== 0) reject(new Error(`Browser acceptance exited with code ${String(code)}.`));
+          else resolve();
+        });
+      });
+
+      const browserEnvBase: NodeJS.ProcessEnv = {
         PATH: process.env.PATH ?? "/usr/bin:/bin",
         HOME: process.env.HOME ?? tmpdir(),
         CI: "1",
         NODE_ENV: "test",
-        PLAYWRIGHT_BASE_URL: baseUrl,
+        PLAYWRIGHT_OUTPUT_DIR: path.join(stateDirectory, "playwright-output"),
         PLAYWRIGHT_EXECUTABLE_PATH: process.env.PLAYWRIGHT_EXECUTABLE_PATH || "/repl/tools/bin/chromium",
         PLAYWRIGHT_FAKE_MEDIA: "1",
         SPARK_CAMERA_BROWSER_E2E: "1",
@@ -1774,46 +2067,92 @@ suite("isolated cross-community content and media access matrix", () => {
       };
 
       await withMediaPlatformEnabled(async () => {
-        await new Promise<void>((resolve, reject) => {
-          const child = spawn(
-            playwrightCli,
-            ["test", "e2e/matrix-profile-spark-browser.spec.ts", "--workers=1", "--reporter=line"],
-            { cwd: workspaceRoot, env: browserEnv, stdio: ["ignore", "pipe", "pipe"] },
-          );
-          let stdout = "";
-          let stderr = "";
-          let timedOut = false;
-          const timeout = setTimeout(() => {
-            timedOut = true;
-            child.kill("SIGKILL");
+        const matrixBaseUrl = await startFrontend(false);
+        try {
+          await Promise.all([
+            writeState("A", authorId, authorToken, matrixBaseUrl),
+            writeState("B", sameCommunityReaderId, sameCommunityReaderToken, matrixBaseUrl),
+            writeState("C", readerId, readerToken, matrixBaseUrl),
+          ]);
+          await runBrowserSpec("e2e/matrix-profile-spark-browser.spec.ts", {
+            ...browserEnvBase,
+            PLAYWRIGHT_BASE_URL: matrixBaseUrl,
           }, 240_000);
-          child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-          child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-          child.once("error", (error) => {
-            clearTimeout(timeout);
-            reject(error);
-          });
-          child.once("close", (code) => {
-            clearTimeout(timeout);
-            if (stdout) process.stdout.write(stdout);
-            if (stderr) process.stderr.write(stderr);
-            if (timedOut) {
-              reject(new Error("Matrix browser acceptance exceeded its four-minute timeout."));
-            } else if (code !== 0) {
-              reject(new Error(`Matrix browser acceptance exited with code ${String(code)}.`));
-            } else {
-              resolve();
-            }
-          });
-        });
+        } finally {
+          await stopFrontend();
+        }
+
+        const studioBaseUrl = await startFrontend(true);
+        try {
+          await Promise.all([
+            writeState("A", authorId, authorToken, studioBaseUrl),
+            writeState("B", sameCommunityReaderId, sameCommunityReaderToken, studioBaseUrl),
+            writeState("C", readerId, readerToken, studioBaseUrl),
+          ]);
+          await runBrowserSpec("e2e/community-moments-media-studio-runtime.spec.ts", {
+            ...browserEnvBase,
+            NODE_ENV: "test",
+            PLAYWRIGHT_BASE_URL: studioBaseUrl,
+            PLAYWRIGHT_FAKE_MEDIA: "0",
+            MATRIX_STUDIO_RUNTIME_E2E: "1",
+            MATRIX_STUDIO_FIXTURE_MARKER: marker,
+            MATRIX_STUDIO_JPEG_PATH: jpegPath,
+            MATRIX_STUDIO_MP4_PATH: mp4Path,
+            MATRIX_LEGACY_STORY_ID: String(legacyMomentStoryId),
+          }, 300_000);
+        } finally {
+          await stopFrontend();
+        }
+
+        const { rows: processedAssets } = await pool.query<{
+          id: number;
+          original_name: string;
+          media_type: string;
+          status: string;
+          variant_key: string | null;
+          thumbnail_key: string | null;
+          duration_ms: number | null;
+        }>(
+          `SELECT id, original_name, media_type, status, variant_key, thumbnail_key, duration_ms
+           FROM media_assets
+           WHERE owner_user_id = $1 AND original_name = ANY($2::text[])
+           ORDER BY array_position($2::text[], original_name)`,
+          [authorId, browserFixtureNames],
+        );
+        expect(processedAssets).toHaveLength(3);
+        expect(processedAssets.map((asset) => asset.original_name)).toEqual(browserFixtureNames);
+        expect(processedAssets.every((asset) => asset.status === "ready")).toBe(true);
+        expect(processedAssets[0]?.media_type).toBe("photo");
+        expect(processedAssets[0]?.thumbnail_key).toBeTruthy();
+        for (const video of processedAssets.slice(1)) {
+          expect(video.media_type).toBe("video");
+          expect(video.variant_key).toBeTruthy();
+          expect(video.duration_ms).toBeGreaterThan(0);
+        }
+        const { rows: completedJobs } = await pool.query<{
+          media_asset_id: number;
+          status: string;
+        }>(
+          `SELECT media_asset_id, status FROM media_processing_jobs
+           WHERE media_asset_id = ANY($1::integer[]) AND status = 'completed'`,
+          [processedAssets.map((asset) => asset.id)],
+        );
+        for (const asset of processedAssets) {
+          expect(completedJobs.some((job) => job.media_asset_id === asset.id)).toBe(true);
+        }
       });
     } finally {
+      if (viteServer && viteServer.exitCode === null) {
+        viteServer.kill("SIGKILL");
+      }
       if (browserServer?.listening) {
         await new Promise<void>((resolve, reject) => {
           browserServer!.close((error) => error ? reject(error) : resolve());
         });
       }
+      if (mediaWorker) await mediaWorker.close();
+      await closeRedis();
       await rm(stateDirectory, { recursive: true, force: true });
     }
-  }, 260_000);
+  }, 660_000);
 });

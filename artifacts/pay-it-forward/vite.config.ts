@@ -12,6 +12,8 @@ if (rawPort && (Number.isNaN(port) || port <= 0)) {
 }
 
 const basePath = process.env.BASE_PATH ?? "/";
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET?.trim() || "http://localhost:8080";
+const websocketProxyTarget = apiProxyTarget.replace(/^http/i, "ws");
 
 export default defineConfig({
   base: basePath,
@@ -135,16 +137,16 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: apiProxyTarget,
         changeOrigin: true,
       },
       "/ws": {
-        target: "ws://localhost:8080",
+        target: websocketProxyTarget,
         changeOrigin: true,
         ws: true,
       },
       "/uploads": {
-        target: "http://localhost:8080",
+        target: apiProxyTarget,
         changeOrigin: true,
       },
     },
