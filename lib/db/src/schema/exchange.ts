@@ -48,6 +48,7 @@ export const exchangeListingsTable = pgTable("exchange_listings", {
   moderation_reviewed_at: timestamp("moderation_reviewed_at", { withTimezone: true }),
   archived_at: timestamp("archived_at", { withTimezone: true }),
   archive_reason: text("archive_reason"),
+  owner_history_removed_at: timestamp("owner_history_removed_at", { withTimezone: true }),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -83,6 +84,8 @@ export const exchangePickupRequestsTable = pgTable("exchange_pickup_requests", {
   expired_at: timestamp("expired_at", { withTimezone: true }),
   expiry_notified_at: timestamp("expiry_notified_at", { withTimezone: true }),
   completed_at: timestamp("completed_at", { withTimezone: true }),
+  buyer_history_removed_at: timestamp("buyer_history_removed_at", { withTimezone: true }),
+  seller_history_removed_at: timestamp("seller_history_removed_at", { withTimezone: true }),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

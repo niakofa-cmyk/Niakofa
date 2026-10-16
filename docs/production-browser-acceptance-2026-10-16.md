@@ -2,6 +2,12 @@
 
 Date: 2026-10-16, America/Chicago
 
+Subsequent source fixes, private Exchange history controls, CI wiring, and
+read-only target-guard improvements are recorded separately in
+[`exchange-reliability-followup-2026-10-16.md`](exchange-reliability-followup-2026-10-16.md).
+The original production observations below remain historical evidence, not a
+claim that those later changes have already passed production acceptance.
+
 ## Verdict
 
 **PARTIAL — authenticated production sign-in and read-only Exchange checks

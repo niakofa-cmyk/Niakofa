@@ -174,6 +174,13 @@ export async function createExchangePickupRequest(id: number, data: CreatePickup
 
 export type PickupAction = "accept" | "decline" | "cancel" | "confirm-complete";
 
+export async function removeExchangeHistory(kind: "listings" | "pickup-requests", id: number): Promise<void> {
+  const result = await request<{ removed_from_history: boolean }>(
+    `/api/community/exchange/${kind}/${id}/remove-history`, { method: "POST" },
+  );
+  if (result.removed_from_history !== true) throw new Error("History removal was not confirmed. Please refresh and try again.");
+}
+
 export async function updateExchangePickupRequest(
   id: number,
   action: PickupAction,

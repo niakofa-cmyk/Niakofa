@@ -49,6 +49,7 @@ import {
   renewExchangeListing,
   updateExchangeListing,
   withdrawExchangeListing,
+  removeExchangeHistory,
   type ExchangeReportType,
 } from "@/lib/community-exchange-client";
 import type {
@@ -379,6 +380,7 @@ export function CommunityExchangeView() {
   const [editStagedMedia, setEditStagedMedia] = useState<StagedListingFile[]>([]);
   const [editMediaProgress, setEditMediaProgress] = useState("");
   const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
+  const [historyRemoving, setHistoryRemoving] = useState<string | null>(null);
   const [impact, setImpact] = useState<ExchangeImpact | null>(null);
   const [postForm, setPostForm] = useState({
     listing_type: "offer" as ExchangeListingType,
@@ -861,6 +863,26 @@ export function CommunityExchangeView() {
     }
   };
 
+  const removeHistory = async (kind: "listings" | "pickup-requests", id: number) => {
+    if (historyRemoving || !window.confirm("Remove this finished record from your history? The other participant keeps their history. Records and media are retained for safety; this is not permanent deletion.")) return;
+    setHistoryRemoving(`${kind}-${id}`);
+    try {
+      await removeExchangeHistory(kind, id);
+      if (kind === "listings") {
+        setListings((current) => current.filter((item) => item.id !== id));
+        setSelectedId(null);
+      } else {
+        setPickupRequests((current) => current.filter((item) => item.id !== id));
+      }
+      setNotice("Removed from your history. Shared records are retained for safety.");
+      setRefreshTick((tick) => tick + 1);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "History could not be updated.");
+    } finally {
+      setHistoryRemoving(null);
+    }
+  };
+
   const withdrawListing = async (listing: ExchangeListing) => {
     if (!window.confirm("Withdraw this listing? It will no longer be discoverable. Coordination history is retained, and a withdrawn listing cannot be renewed.")) return;
     setWithdrawSubmitting(true);
@@ -1022,6 +1044,14 @@ export function CommunityExchangeView() {
                      }} className="min-h-8 rounded-lg border border-primary/40 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary" data-testid={`button-open-exchange-messages-${request.id}`}><MessageSquare className="mr-1 inline h-3.5 w-3.5" /> Open Messages</button>
                    ) : null}
                    <span className="text-xs text-muted-foreground">Manage pickup actions in the Exchange panel in Messages.</span>
+                   {["completed", "cancelled", "declined", "expired"].includes(request.status) && request.dispute?.status !== "open" && (
+                     <button type="button" disabled={historyRemoving !== null}
+                       onClick={() => void removeHistory("pickup-requests", request.id)}
+                       className="min-h-11 rounded-lg border border-border px-3 py-2 text-xs font-bold active:bg-muted disabled:opacity-50"
+                       data-testid={`button-remove-pickup-history-${request.id}`}>
+                       {historyRemoving === `pickup-requests-${request.id}` ? "Removing…" : "Remove from my history"}
+                     </button>
+                   )}
                 </div>
               </div>
             ))}
@@ -1133,6 +1163,14 @@ export function CommunityExchangeView() {
 
       {selectedId !== null && !editOpen && (
         <ModalFrame title={selectedListing?.title || "Listing details"} eyebrow="Community post" onClose={() => setSelectedId(null)} wide>
+           {selectedListing && selectedListing.seller_id === currentUser?.id && ["withdrawn", "completed", "archived"].includes(selectedListing.status) && (
+             <button type="button" disabled={historyRemoving !== null}
+               onClick={() => void removeHistory("listings", selectedListing.id)}
+               className="mb-4 min-h-11 rounded-lg border border-border px-3 py-2 text-xs font-bold active:bg-muted disabled:opacity-50"
+               data-testid="button-remove-listing-history">
+               {historyRemoving === `listings-${selectedListing.id}` ? "Removing…" : "Remove from my history"}
+             </button>
+           )}
             {!detailLoading && !detailError && selectedListing?.id === selectedId && <ExchangeListingMediaGallery media={selectedListing.media} />}
            {selectedListing?.seller_id === currentUser?.id && selectedListing?.status === "active" && <button
              type="button" disabled={withdrawSubmitting}

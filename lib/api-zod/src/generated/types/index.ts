@@ -105,6 +105,7 @@ export * from './deleteUser200';
 export * from './directMessageBlockedUsers';
 export * from './directMessageBlockedUsersBlockedUsersItem';
 export * from './directMessageBlockResponse';
+export * from './exchangeHistoryRemoval';
 export * from './familyStory';
 export * from './familyStoryAuthor';
 export * from './familyStoryFields';

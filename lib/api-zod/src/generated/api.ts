@@ -9,6 +9,40 @@ import * as zod from 'zod';
 
 
 /**
+ * Requires an approved authenticated owner, a withdrawn/completed/archived listing, and no active pickups. Shared records and media are retained for safety. This is not permanent deletion.
+ * @summary Remove a finished listing from its owner's private history
+ */
+
+
+
+export const RemoveExchangeListingHistoryParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const RemoveExchangeListingHistoryResponse = zod.object({
+  "removed_from_history": zod.literal(true),
+  "retained_for_safety": zod.literal(true)
+})
+
+
+/**
+ * Requires an approved authenticated buyer or seller. Only completed/cancelled/declined/expired pickups without an open dispute may be removed. The other participant's history and safety records remain intact.
+ * @summary Remove a finished pickup from one participant's private history
+ */
+
+
+
+export const RemoveExchangePickupHistoryParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const RemoveExchangePickupHistoryResponse = zod.object({
+  "removed_from_history": zod.literal(true),
+  "retained_for_safety": zod.literal(true)
+})
+
+
+/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({

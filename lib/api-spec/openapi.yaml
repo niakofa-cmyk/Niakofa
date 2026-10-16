@@ -41,6 +41,70 @@ tags:
     description: Direct messaging and account block controls
 
 paths:
+  /community/exchange/listings/{id}/remove-history:
+    post:
+      tags: [exchange]
+      operationId: removeExchangeListingHistory
+      summary: Remove a finished listing from its owner's private history
+      description: Requires an approved authenticated owner, a withdrawn/completed/archived listing, and no active pickups. Shared records and media are retained for safety. This is not permanent deletion.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Removed only from the caller's history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeHistoryRemoval"
+        "400":
+          description: Invalid record identifier
+        "401":
+          description: Authentication required
+        "403":
+          description: Account approval required
+        "404":
+          description: Listing absent or not owned by caller
+        "409":
+          description: Listing or pickup coordination is not finished
+  /community/exchange/pickup-requests/{id}/remove-history:
+    post:
+      tags: [exchange]
+      operationId: removeExchangePickupHistory
+      summary: Remove a finished pickup from one participant's private history
+      description: Requires an approved authenticated buyer or seller. Only completed/cancelled/declined/expired pickups without an open dispute may be removed. The other participant's history and safety records remain intact.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Removed only from the caller's history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeHistoryRemoval"
+        "400":
+          description: Invalid record identifier
+        "401":
+          description: Authentication required
+        "403":
+          description: Account approval required
+        "404":
+          description: Pickup absent or caller is not a participant
+        "409":
+          description: Pickup active or dispute unresolved
   /healthz:
     get:
       operationId: healthCheck
@@ -3263,6 +3327,16 @@ components:
       scheme: bearer
       bearerFormat: NiakofaHmacToken
   schemas:
+    ExchangeHistoryRemoval:
+      type: object
+      required: [removed_from_history, retained_for_safety]
+      properties:
+        removed_from_history:
+          type: boolean
+          enum: [true]
+        retained_for_safety:
+          type: boolean
+          enum: [true]
     CommunityMediaItem:
       type: object
       required: [id, post_id, mime_type, alt_text, media_asset_id, media_status, viewer_saved, body, author_name, author_avatar, created_at, media_url, thumbnail_url, context]

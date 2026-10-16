@@ -5,6 +5,11 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+export interface ExchangeHistoryRemoval {
+  removed_from_history: true;
+  retained_for_safety: true;
+}
+
 export type CommunityMediaItemContext = {
   label: string;
   href: string;

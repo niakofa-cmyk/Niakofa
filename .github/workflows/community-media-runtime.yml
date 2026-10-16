@@ -1,0 +1,38 @@
+name: Community media runtime
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-media-regression:
+    name: Real upload, processing, playback and privacy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install local database, queue and media tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client redis-server ffmpeg
+          echo "$(pg_config --bindir)" >> "$GITHUB_PATH"
+      - name: Install browser dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run real disposable Media Studio regression
+        env:
+          PLAYWRIGHT_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: bash scripts/run-community-moments-browser-regression.sh

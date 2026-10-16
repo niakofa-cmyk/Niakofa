@@ -93,6 +93,21 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       };
       const ownerPage = await makePage(owner);
       const buyerPage = await makePage(buyer);
+      const enterExchange = async (page: Page, path = "/community/exchange") => {
+        await page.goto(`${baseURL}${path}`);
+        const areaDialog = page.getByRole("dialog", { name: "Set your local area" });
+        const exchange = page.getByRole("region", { name: "Niakofa Exchange" });
+        // goto() can finish before the lazy Exchange surface mounts. An
+        // immediate isVisible() used to skip the required first-visit dialog.
+        await expect(areaDialog.or(exchange).first()).toBeVisible();
+        if (await areaDialog.isVisible()) {
+          await page.getByTestId("input-location-area").fill(area);
+          await expect(page.getByTestId("input-location-area")).toHaveValue(area);
+          await page.getByTestId("button-save-location").click();
+          await expect(areaDialog).toBeHidden();
+        }
+        await expect(exchange).toBeVisible();
+      };
       const api = async (user: FixtureUser, path: string, body: unknown) => {
         const response = await fetch(`${baseURL}/api${path}`, {
           method: "POST",
@@ -131,13 +146,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       expect(createdPickup.status).toBe(201);
       pickupId = createdPickup.body.pickup_request.id as number;
 
-      await ownerPage.goto(`${baseURL}/community?tab=exchange`);
-      const areaDialog = ownerPage.getByRole("dialog", { name: "Set your local area" });
-      if (await areaDialog.isVisible().catch(() => false)) {
-        await ownerPage.getByTestId("input-location-area").fill(area);
-        await ownerPage.getByTestId("button-save-location").click();
-      }
-      await expect(ownerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      await enterExchange(ownerPage, "/community?tab=exchange");
       await expect(ownerPage.getByTestId(`pickup-request-${pickupId}`)).toBeVisible({ timeout: 10_000 });
       await ownerPage.getByTestId(`button-open-exchange-messages-${pickupId}`).click();
       await ownerPage.waitForURL(/\/messages\?/);
@@ -201,6 +210,33 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
         [String(listingId)],
       );
       expect(completionNotices.rows).toEqual([{ user_id: buyer.id }]);
+
+      // Private history removal survives reload without erasing the peer's
+      // record or the shared two-party completion evidence.
+      await enterExchange(buyerPage);
+      await expect(buyerPage.getByTestId(`pickup-request-${pickupId}`)).toBeVisible();
+      buyerPage.once("dialog", (dialog) => dialog.accept());
+      await buyerPage.getByTestId(`button-remove-pickup-history-${pickupId}`).click();
+      await expect(buyerPage.getByTestId(`pickup-request-${pickupId}`)).toHaveCount(0);
+      await buyerPage.reload();
+      await expect(buyerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      await expect(buyerPage.getByTestId(`pickup-request-${pickupId}`)).toHaveCount(0);
+      await enterExchange(ownerPage);
+      await expect(ownerPage.getByTestId(`pickup-request-${pickupId}`)).toBeVisible();
+      await ownerPage.getByRole("button", { name: "My posts", exact: true }).click();
+      await ownerPage.getByTestId(`card-listing-${listingId}`).getByRole("button").first().click();
+      ownerPage.once("dialog", (dialog) => dialog.accept());
+      await ownerPage.getByTestId("button-remove-listing-history").click();
+      await expect(ownerPage.getByTestId(`card-listing-${listingId}`)).toHaveCount(0);
+      await ownerPage.reload();
+      await expect(ownerPage.getByRole("region", { name: "Niakofa Exchange" })).toBeVisible();
+      await expect(ownerPage.getByTestId(`card-listing-${listingId}`)).toHaveCount(0);
+      await expect(ownerPage.getByTestId(`pickup-request-${pickupId}`)).toBeVisible();
+      const retainedRecord = await pool.query(
+        "SELECT status,buyer_history_removed_at FROM exchange_pickup_requests WHERE id=$1", [pickupId],
+      );
+      expect(retainedRecord.rows[0].status).toBe("completed");
+      expect(retainedRecord.rows[0].buyer_history_removed_at).not.toBeNull();
 
       const withdrawTitle = `Focused withdraw ${runId}`;
       const withdrawListing = await api(owner, "/community/exchange/listings", {

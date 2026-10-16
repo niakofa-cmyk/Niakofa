@@ -692,7 +692,10 @@ router.get("/community/exchange/listings", requireAuth, requireApproved, general
   }
 
   const conditions = mine
-    ? eq(exchangeListingsTable.seller_id, userId)
+    ? and(eq(exchangeListingsTable.seller_id, userId), or(
+      isNull(exchangeListingsTable.owner_history_removed_at),
+      inArray(exchangeListingsTable.status, ["active", "reserved", "held"]),
+    ))
     : and(eq(exchangeListingsTable.status, "active"), eq(exchangeListingsTable.moderation_status, "approved"));
   const rows = await db
     .select(listingSelect)
@@ -1027,6 +1030,60 @@ router.patch("/community/exchange/listings/:id", requireAuth, requireApproved, c
   });
 });
 
+// Private history removal never deletes shared pickup, dispute or media rows.
+// Lock the listing first, as request creation does, to serialize new pickups.
+router.post("/community/exchange/listings/:id/remove-history", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid listing id" });
+  const result = await db.transaction(async (tx) => {
+    const [listing] = await tx.select().from(exchangeListingsTable).where(and(
+      eq(exchangeListingsTable.id, id),
+      eq(exchangeListingsTable.seller_id, req.authenticatedUserId!),
+    )).for("update").limit(1);
+    if (!listing) return { status: 404, error: "Listing not found" };
+    if (!["withdrawn", "completed", "archived"].includes(listing.status)) {
+      return { status: 409, error: "Withdraw or finish this listing before removing it from your history." };
+    }
+    const [active] = await tx.select({ id: exchangePickupRequestsTable.id }).from(exchangePickupRequestsTable)
+      .where(and(eq(exchangePickupRequestsTable.listing_id, id),
+        inArray(exchangePickupRequestsTable.status, ["requested", "accepted", "disputed"]))).limit(1);
+    if (active) return { status: 409, error: "Resolve active pickup requests before removing this listing from your history." };
+    await tx.update(exchangeListingsTable).set({ owner_history_removed_at: new Date() })
+      .where(eq(exchangeListingsTable.id, id));
+    return { status: 200 };
+  });
+  if (result.error) return res.status(result.status).json({ error: result.error });
+  return res.json({ removed_from_history: true, retained_for_safety: true });
+});
+
+router.post("/community/exchange/pickup-requests/:id/remove-history", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid pickup request id" });
+  const userId = req.authenticatedUserId!;
+  const result = await db.transaction(async (tx) => {
+    const [pickup] = await tx.select().from(exchangePickupRequestsTable)
+      .where(eq(exchangePickupRequestsTable.id, id)).for("update").limit(1);
+    if (!pickup) return { status: 404, error: "Pickup request not found" };
+    const [listing] = await tx.select({ seller_id: exchangeListingsTable.seller_id }).from(exchangeListingsTable)
+      .where(eq(exchangeListingsTable.id, pickup.listing_id)).limit(1);
+    if (!listing || (pickup.buyer_id !== userId && listing.seller_id !== userId)) {
+      return { status: 404, error: "Pickup request not found" };
+    }
+    if (!["completed", "cancelled", "declined", "expired"].includes(pickup.status)) {
+      return { status: 409, error: "Finish or cancel this pickup before removing it from your history." };
+    }
+    const [dispute] = await tx.select({ id: exchangePickupDisputesTable.id }).from(exchangePickupDisputesTable)
+      .where(and(eq(exchangePickupDisputesTable.pickup_request_id, id), eq(exchangePickupDisputesTable.status, "open"))).limit(1);
+    if (dispute) return { status: 409, error: "Resolve the open dispute before removing this pickup from your history." };
+    await tx.update(exchangePickupRequestsTable).set(pickup.buyer_id === userId
+      ? { buyer_history_removed_at: new Date() }
+      : { seller_history_removed_at: new Date() }).where(eq(exchangePickupRequestsTable.id, id));
+    return { status: 200 };
+  });
+  if (result.error) return res.status(result.status).json({ error: result.error });
+  return res.json({ removed_from_history: true, retained_for_safety: true });
+});
+
 router.post("/community/exchange/listings/:id/withdraw", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid listing id" });
@@ -1061,6 +1118,7 @@ router.post("/community/exchange/listings/:id/renew", requireAuth, requireApprov
       status: "active",
       archived_at: null,
       archive_reason: null,
+      owner_history_removed_at: null,
       updated_at: now,
     })
     .where(and(eq(exchangeListingsTable.id, id), eq(exchangeListingsTable.status, "archived")))
@@ -1111,7 +1169,15 @@ router.get("/community/exchange/pickup-requests", requireAuth, requireApproved, 
     .innerJoin(exchangeListingsTable, eq(exchangeListingsTable.id, exchangePickupRequestsTable.listing_id))
     .innerJoin(sql`users seller`, sql`seller.id = ${exchangeListingsTable.seller_id}`)
     .innerJoin(sql`users buyer`, sql`buyer.id = ${exchangePickupRequestsTable.buyer_id}`)
-    .where(or(eq(exchangePickupRequestsTable.buyer_id, userId), eq(exchangeListingsTable.seller_id, userId)))
+    .where(and(
+      or(eq(exchangePickupRequestsTable.buyer_id, userId), eq(exchangeListingsTable.seller_id, userId)),
+      or(
+        inArray(exchangePickupRequestsTable.status, ["requested", "accepted", "disputed"]),
+        and(eq(exchangePickupRequestsTable.buyer_id, userId), isNull(exchangePickupRequestsTable.buyer_history_removed_at)),
+        and(eq(exchangeListingsTable.seller_id, userId), isNull(exchangePickupRequestsTable.seller_history_removed_at)),
+        sql`EXISTS (SELECT 1 FROM exchange_pickup_disputes d WHERE d.pickup_request_id = ${exchangePickupRequestsTable.id} AND d.status = 'open')`,
+      ),
+    ))
     .orderBy(desc(exchangePickupRequestsTable.updated_at), desc(exchangePickupRequestsTable.id))
     .limit(100);
   const disputes = rows.length

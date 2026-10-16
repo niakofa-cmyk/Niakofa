@@ -15,6 +15,28 @@
 
 *(merged from root `replit.md`, July 10, 2026)*
 
+### Approved production acceptance accounts
+
+The owner reconfirmed this matrix on October 16, 2026. Independent production
+UI sign-in and self-profile checks that day verified all three accounts as
+distinct, active and approved:
+
+| Label | Verified role and relationship | Acceptance purpose |
+| --- | --- | --- |
+| A | Admin; positive assigned Community | Listing owner / seller / publisher |
+| B | Helper; same positive assigned Community as A | Buyer / same-community reader |
+| C | Approved account; different positive assigned Community from A/B | Cross-community privacy viewer |
+
+There is **no D account**. Never change approvals, roles or memberships to
+manufacture a passing result. Credentials stay in the existing `MEDIA_CERT_*`
+secrets; never put account emails, IDs, passwords, tokens or browser states in
+this document. See `docs/production-browser-acceptance-2026-10-16.md` for dated,
+sanitized evidence. Recheck current identity on the next authorized run.
+
+Account verification is not full feature certification: production media was
+blocked by asset rate limiting, live SQL by a mismatched read-only target, and
+physical iOS/Android evidence remains outstanding.
+
 Niakofa is a map-first, pay-it-forward community mutual aid platform for
 Tarrant County, TX. Residents request help with groceries, rides, errands,
 and more; neighbors volunteer as helpers and earn goodwill; everything runs
@@ -1104,3 +1126,31 @@ but matching amounts alone do not prove the private ledger linkage or its
 provenance. Verify the BalanceTransaction and the linked financial event
 separately, and keep signed-in admin acceptance distinct from public API
 evidence.
+
+---
+
+### Session: October 16, 2026 — Exchange history and acceptance reliability
+
+- Recorded the independently verified A-admin/B-helper/same-community and
+  C-approved/different-community matrix above; there is no D account.
+- Added server-persisted, per-participant **Remove from my history** controls
+  for finished Exchange listings and pickups. Active coordination and open
+  disputes remain protected; another participant's history and shared safety
+  records/media are not deleted. Migration `0198` and regenerated OpenAPI
+  contracts accompany the implementation.
+- Hardened the read-only schema audit with an exact operator-confirmed endpoint
+  guard, write-role rejection, bounded queries, and explicit unknown-ledger
+  handling. The saved audit connection still targets a different endpoint;
+  production SQL was not attempted and is not certified.
+- Added structured asset/job/story-correlated upload, processing and publication
+  events without captions, credentials or object URLs. Pending-review
+  publication has a separate event rather than claiming public visibility.
+- Added a dedicated realistic media CI workflow. Moved the tracked synthetic
+  incoming PNG into documented test fixtures; runtime uploads stay ignored.
+- Fixed local CLI cleanup of imported BullMQ producers so Exchange integration
+  tests can terminate after success. The focused browser test now waits for
+  lazy Exchange mounting before deciding whether to enter a local area.
+
+See `docs/exchange-reliability-followup-2026-10-16.md` for verification results
+and remaining production/device gates. Local passing results and a repository
+push do not, by themselves, certify production end to end.

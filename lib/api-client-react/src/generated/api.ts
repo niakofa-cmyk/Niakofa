@@ -68,6 +68,7 @@ import type {
   DeleteUser200,
   DirectMessageBlockResponse,
   DirectMessageBlockedUsers,
+  ExchangeHistoryRemoval,
   FamilyStoryInput,
   FamilyStoryKeepResponse,
   FamilyStoryMutationResponse,
@@ -201,6 +202,156 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getRemoveExchangeListingHistoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/exchange/listings/${id}/remove-history`
+}
+
+/**
+ * Requires an approved authenticated owner, a withdrawn/completed/archived listing, and no active pickups. Shared records and media are retained for safety. This is not permanent deletion.
+ * @summary Remove a finished listing from its owner's private history
+ */
+export const removeExchangeListingHistory = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<ExchangeHistoryRemoval> => {
+
+  return customFetch<ExchangeHistoryRemoval>(getRemoveExchangeListingHistoryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveExchangeListingHistoryMutationKey = () => ['removeExchangeListingHistory'] as const;
+
+export const getRemoveExchangeListingHistoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeExchangeListingHistory>>, TError,RemoveExchangeListingHistoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeExchangeListingHistory>>, TError,RemoveExchangeListingHistoryMutationVariables, TContext> => {
+
+const mutationKey = getRemoveExchangeListingHistoryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeExchangeListingHistory>>, RemoveExchangeListingHistoryMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  removeExchangeListingHistory(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveExchangeListingHistoryMutationResult = NonNullable<Awaited<ReturnType<typeof removeExchangeListingHistory>>>
+
+    export type RemoveExchangeListingHistoryMutationError = ErrorType<void>
+    export type RemoveExchangeListingHistoryMutationVariables = {id: number}
+
+    /**
+ * @summary Remove a finished listing from its owner's private history
+ */
+export const useRemoveExchangeListingHistory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeExchangeListingHistory>>, TError,RemoveExchangeListingHistoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeExchangeListingHistory>>,
+        TError,
+        RemoveExchangeListingHistoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveExchangeListingHistoryMutationOptions(options));
+    }
+
+export const getRemoveExchangePickupHistoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/community/exchange/pickup-requests/${id}/remove-history`
+}
+
+/**
+ * Requires an approved authenticated buyer or seller. Only completed/cancelled/declined/expired pickups without an open dispute may be removed. The other participant's history and safety records remain intact.
+ * @summary Remove a finished pickup from one participant's private history
+ */
+export const removeExchangePickupHistory = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<ExchangeHistoryRemoval> => {
+
+  return customFetch<ExchangeHistoryRemoval>(getRemoveExchangePickupHistoryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveExchangePickupHistoryMutationKey = () => ['removeExchangePickupHistory'] as const;
+
+export const getRemoveExchangePickupHistoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeExchangePickupHistory>>, TError,RemoveExchangePickupHistoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeExchangePickupHistory>>, TError,RemoveExchangePickupHistoryMutationVariables, TContext> => {
+
+const mutationKey = getRemoveExchangePickupHistoryMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeExchangePickupHistory>>, RemoveExchangePickupHistoryMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  removeExchangePickupHistory(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveExchangePickupHistoryMutationResult = NonNullable<Awaited<ReturnType<typeof removeExchangePickupHistory>>>
+
+    export type RemoveExchangePickupHistoryMutationError = ErrorType<void>
+    export type RemoveExchangePickupHistoryMutationVariables = {id: number}
+
+    /**
+ * @summary Remove a finished pickup from one participant's private history
+ */
+export const useRemoveExchangePickupHistory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeExchangePickupHistory>>, TError,RemoveExchangePickupHistoryMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeExchangePickupHistory>>,
+        TError,
+        RemoveExchangePickupHistoryMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveExchangePickupHistoryMutationOptions(options));
+    }
 
 export const getHealthCheckUrl = () => {
 

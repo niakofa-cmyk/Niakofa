@@ -698,7 +698,7 @@ async function processMomentComposition(mediaAssetId: number, jobId: number, att
     }
     // The attempt-specific object is now the live variant and must remain stored.
     generatedKey = undefined;
-    logger.info({ mediaAssetId }, "moment-composition: composition completed");
+    logger.info({ event: "processing_completed", mediaAssetId, jobId, attempt }, "moment-composition: composition completed");
   } catch (error) {
     if (generatedKey) {
       const reconciliation = await reconcileMomentCompositionPromotion(
@@ -800,6 +800,7 @@ export async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
       .returning();
   if (!claimed) return;
 
+  logger.info({ event: "processing_started", mediaAssetId, jobId: claimed.id, attempt: claimed.attempts }, "media-lifecycle");
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, mediaAssetId)).limit(1);
   if (!asset || asset.status === "deleted") {
     await cancelClaimedJob(claimed.id, jobType === "moment_compose" ? claimed.attempts : undefined);
@@ -1036,7 +1037,7 @@ export async function processMediaJob(job: Job<MediaJobData>): Promise<void> {
       asset.composition_manifest,
       requestedCoverTimeMs,
     ))) return;
-    logger.info({ mediaAssetId, jobType }, "media-processing: job completed");
+    logger.info({ event: "processing_completed", mediaAssetId, jobType, jobId: claimed.id }, "media-processing: job completed");
   } catch (error) {
     const requestId = randomUUID();
     const message = error instanceof Error && error.message === "STORAGE_OBJECT_TOO_LARGE"

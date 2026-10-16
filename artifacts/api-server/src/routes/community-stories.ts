@@ -1931,6 +1931,11 @@ router.post("/community/stories", requireAuth, requireApproved, communityPostLim
         logger.warn({ err: error, storyId: result.story.id }, "community-story mention notification dispatch failed after publish");
       }
     }
+    logger.info({
+      event: result.story.status === "published" ? "publish_succeeded" : "publication_pending_review",
+      storyId: result.story.id, mediaAssetIds, status: result.story.status,
+      requestId: String(req.id ?? ""),
+    }, "media-lifecycle");
     return res.status(201).json({ story: { id: result.story.id, status: result.story.status, expires_at: result.story.expires_at.toISOString() } });
   } catch (error) {
     await Promise.all(storedKeys.map((key) => deleteAsset(key)));

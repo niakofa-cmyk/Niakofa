@@ -37,8 +37,20 @@ Do not repeat a production E2E scenario that creates or changes records solely t
 
 **How to apply:** Record the run date, full served commit, source of the browser result, preflight outcome, and cleanup behavior. Verify deployment identity and readiness separately. Do not set production mutation gates or rerun the scenario without explicit authorization and approved disposable accounts/states.
 
-Exchange acceptance uses only A/B/C: A is the approved admin and seller/publisher, B is the approved helper and same-community buyer/reader, and C is the cross-community privacy viewer. There is no D account; the user explicitly confirmed “D does not exist! Only ABC.” Do not request or create a fourth account. Synthetic local fixtures are not production identities. Physical iOS Safari and Android Chrome evidence is required for device certification.
+Exchange acceptance uses only A/B/C: A is the approved admin and seller/publisher, B is the approved helper and same-community buyer/reader, and C is an approved account in a different community, used as the privacy viewer. There is no D account; the user explicitly confirmed “D does not exist! Only ABC.” Do not request or create a fourth account. Synthetic local fixtures are not production identities. Physical iOS Safari and Android Chrome evidence is required for device certification.
 
 **Why:** The user corrected the mistaken D label and confirmed the documented B role. They require renewed disposable-account authorization, the documented role/community boundaries, and a blocked certification status for every unresolved critical path.
 
 **How to apply:** Check the repository's cross-community matrix and recorded production acceptance evidence before asking the user to supply account roles again. Confirm the current production role mapping before login-backed testing or writes. Do not relabel accounts, change memberships, or substitute desktop/mobile emulation for physical-device results; mark missing device and critical workflow evidence blocked.
+
+The user reconfirmed the approved A/B/C roles on 2026-10-16. That day's independent
+production sign-in/self-profile verification is documented in
+`docs/production-browser-acceptance-2026-10-16.md`; it passed before media
+navigation was blocked by asset rate limiting.
+
+**Why:** Verified identities must not be repeatedly described as unavailable just
+because the later media or database checks were blocked.
+
+**How to apply:** Preserve the distinction between verified account evidence and
+unverified feature journeys. Recheck the live identity at the next authorized run,
+without requesting roles again or storing account identifiers or credentials.

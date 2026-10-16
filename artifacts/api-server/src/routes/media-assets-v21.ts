@@ -580,6 +580,7 @@ router.post("/media-assets/uploads", requireAuth, requireApproved, generalApiLim
     return res.status(500).json({ error: "Resumable media upload could not be initialized." });
   }
 
+  logger.info({ event: "upload_started", mediaAssetId: asset.id, requestId: String(req.id ?? "") }, "media-lifecycle");
   return res.status(201).json({
     media_asset_id: asset.id,
     upload: {
@@ -1103,6 +1104,7 @@ router.post("/media-assets/:id/complete", requireAuth, requireApproved, generalA
     });
   }
   try {
+    logger.info({ event: "upload_completed", mediaAssetId: asset.id, requestId }, "media-lifecycle");
     const queued = await enqueueMediaAssetProcessing(asset.id, asset.media_type, asset.composition_manifest);
     if (!queued) {
       logger.warn({ requestId, mediaAssetId: asset.id }, "media-upload: processing queue unavailable");

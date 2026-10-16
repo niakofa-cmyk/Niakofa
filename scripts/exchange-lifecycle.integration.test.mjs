@@ -744,6 +744,33 @@ try {
     `account deletion and new coordination must not both succeed: deletion=${deletionRace.status}, pickup=${pickupRace.status}`,
   );
 
+  // History removal is server-persisted, per participant, idempotent, and
+  // cannot erase live coordination or another neighbor's safety evidence.
+  const historyListing = await newListing();
+  const historyPickup = await createPickup(historyListing.id, buyerA);
+  expectStatus(historyPickup, 201, "history fixture pickup");
+  const historyId = historyPickup.body.pickup_request.id;
+  const removePickupPath = `/community/exchange/pickup-requests/${historyId}/remove-history`;
+  const removeListingPath = `/community/exchange/listings/${historyListing.id}/remove-history`;
+  expectStatus(await api(buyerC).post(removePickupPath), 404, "stranger cannot remove pickup history");
+  expectStatus(await api(buyerA).post(removePickupPath), 409, "active pickup history protected");
+  expectStatus(await api(seller).post(removeListingPath), 409, "active listing history protected");
+  expectStatus(await api(buyerA).post(`/community/exchange/pickup-requests/${historyId}/cancel`), 200, "cancel history fixture");
+  expectStatus(await api(buyerA).post(removePickupPath), 200, "buyer removes own terminal history");
+  expectStatus(await api(buyerA).post(removePickupPath), 200, "removal is idempotent");
+  assert.equal(await participantPickup(buyerA, historyId), undefined);
+  assert.equal((await participantPickup(seller, historyId)).id, historyId, "seller keeps independent history");
+  expectStatus(await api(seller).post(`/community/exchange/listings/${historyListing.id}/withdraw`), 200, "withdraw history fixture");
+  expectStatus(await api(buyerA).post(removeListingPath), 404, "non-owner cannot remove listing history");
+  expectStatus(await api(seller).post(removeListingPath), 200, "owner removes terminal listing history");
+  const ownerHistory = await api(seller).get("/community/exchange/listings?mine=true");
+  assert.equal(ownerHistory.body.listings.some((item) => item.id === historyListing.id), false);
+  assert.equal((await participantPickup(seller, historyId)).id, historyId, "listing removal preserves pickup history");
+  expectStatus(await api(seller).post(removePickupPath), 200, "seller independently removes pickup history");
+  assert.equal(await participantPickup(seller, historyId), undefined);
+  const retainedHistory = await pool.query("SELECT id FROM exchange_pickup_requests WHERE id=$1", [historyId]);
+  assert.equal(retainedHistory.rows.length, 1, "shared audit record must not be deleted");
+
   console.log("Exchange lifecycle integration passed against the migrated database and actual API router.");
 } finally {
   if (fixtureListings.length) {
@@ -766,4 +793,12 @@ try {
   }
   await pool.end();
   if (appPool && appPool !== pool) await appPool.end();
+  // The local launcher provides Redis. Close imported BullMQ producers as well
+  // as SQL pools, or a passing CLI run keeps its sockets open indefinitely.
+  const queues = await import("../artifacts/api-server/src/lib/queue.ts");
+  await Promise.all([
+    queues.payoutQueue, queues.cashoutQueue, queues.pledgeQueue,
+    queues.cleanupQueue, queues.notificationQueue, queues.mediaProcessingQueue,
+  ].map((queue) => queue?.close()));
+  await queues.closeRedis();
 }

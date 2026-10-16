@@ -4,6 +4,7 @@ const steps = [
   ["Exchange privacy validation", ["node", "--test", "scripts/exchange-privacy.test.mjs"]],
   ["Exchange API privacy contracts", ["node", "--test", "scripts/exchange-api-security-contract.test.mjs"]],
   ["Exchange readiness contracts", ["node", "--test", "scripts/exchange-production-readiness-contract.test.mjs"]],
+  ["Exchange audit endpoint guards", ["node", "--test", "scripts/exchange-audit-target.test.mjs"]],
   ["Exchange spatial benchmark sanity", ["node", "--test", "scripts/exchange-spatial-benchmark.test.mjs"]],
 ];
 

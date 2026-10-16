@@ -63,6 +63,7 @@
 - [Stripe Accounts v2 recipient capability](stripe-v2-recipient-capability.md) — V1 transfers-active is insufficient; treat missing v2 recipient transfer capability as definitive.
 - [Release evidence commit boundary](release-evidence-commit-boundary.md) — keep deployed app SHAs separate from later documentation-only GitHub commits; avoid circular self-hashes.
 - [Deployed acceptance](deployed-acceptance-boundary.md) — require distinct approved community IDs, served SHA, and mutation gates; label operator evidence; never rerun E2E just to refresh proof.
+- [Exchange history retention](exchange-history-retention.md) — private removal preserves shared safety records and does not satisfy exact production-fixture deletion.
 - [GitHub exact-commit sync](github-exact-commit-sync.md) — verify Git object bytes, use plural refs for updates, and re-read main after every write attempt.
 - [Diaspora source contracts](diaspora-source-contracts.md) — keep source-level checks aligned with canonical Globe/Diaspora routes when consumers migrate.
 - [Authenticated Admin browser checks](admin-live-acceptance.md) — storage state authenticates navigation, but page.evaluate fetches still need explicit Bearer headers and exact role selectors.
