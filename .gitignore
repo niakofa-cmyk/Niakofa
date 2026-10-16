@@ -85,3 +85,6 @@ uv.lock
 
 # Generated local verification media and browser evidence.
 /generated-artifacts/
+
+# Runtime uploads are not source fixtures. Existing tracked files are unaffected.
+/artifacts/api-server/uploads/

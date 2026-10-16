@@ -98,3 +98,17 @@ mtime_ms = 1790075103542
 storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:d8f64858-48c7-4469-a8b4-c094849dccfe/6808fa0f-d9c2-4da9-957a-24bec3b2f153/0114c781-f0dd-4c7d-b75c-d575e18c7701"
 storage_version_token = "1790075109935463"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "PBuzFTP2cLqpi5A6f2BKA"
+uri = "file://docs/exchange-production-acceptance-2026-10-15.md"
+type = "text"
+title = "Exchange production acceptance — blocked gates and evidence"
+description = "Sanitized release identity, source and CI verification, account/schema blockers, and per-step iOS/Android acceptance matrix. No production test data was created."
+logical_id = "a2a10337-0833-489b-b5ec-db20362e7eb1"
+content_hash = "sha256:33ae598088d20afe04f5abe65bcb2bccb21f97ad9189a260e34e067e8637d694"
+size = 12263
+mtime_ms = 1792118592017
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:b34a7ede-d2c0-4aa0-bf17-38116ac4a65c/a2a10337-0833-489b-b5ec-db20362e7eb1/415cf5ec-b31e-4ba2-a7a1-0c400d326e1f"
+storage_version_token = "1792118642723623"
+content_type = "text/markdown"

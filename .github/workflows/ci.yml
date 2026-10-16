@@ -64,6 +64,8 @@ jobs:
         run: pnpm run typecheck
       - name: Run frontend tests
         run: pnpm --filter @workspace/pay-it-forward run test
+      - name: Exchange listing media upload and interrupted-chunk retry
+        run: pnpm --filter @workspace/pay-it-forward run test:exchange-listing-media
       - name: Run backend tests
         run: pnpm --filter @workspace/api-server run test
         env:

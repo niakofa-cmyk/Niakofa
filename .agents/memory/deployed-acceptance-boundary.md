@@ -36,3 +36,9 @@ Do not repeat a production E2E scenario that creates or changes records solely t
 **Why:** Repeating the arrival flow creates and transitions a real production request before cleanup. Read-only deployment checks and local guard tests are useful corroboration, but they do not replace the authenticated browser run.
 
 **How to apply:** Record the run date, full served commit, source of the browser result, preflight outcome, and cleanup behavior. Verify deployment identity and readiness separately. Do not set production mutation gates or rerun the scenario without explicit authorization and approved disposable accounts/states.
+
+Exchange acceptance must preserve the current matrix's account roles and require physical iOS Safari and Android Chrome evidence for device certification. A suggested A/D/C role assignment is not proof that D is the existing B account or that synthetic local fixtures are production identities.
+
+**Why:** The user requires renewed disposable-account authorization, the documented role/community boundaries, and a blocked certification status for every unresolved critical path.
+
+**How to apply:** Confirm the current production role mapping before login-backed testing or writes. Do not relabel accounts, change memberships, or substitute desktop/mobile emulation for physical-device results; mark missing device and critical workflow evidence blocked.

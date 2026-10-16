@@ -9,6 +9,7 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:exchange-spark": "node --import tsx/esm --test src/lib/__tests__/exchange-spark-upload-rules.test.ts src/lib/__tests__/exchange-spark-upload-client.test.ts",
+    "test:exchange-listing-media": "node --import tsx/esm --test src/lib/__tests__/exchange-listing-media-client.test.ts",
     "test:color-mode": "node --import tsx/esm --test src/lib/__tests__/color-mode.test.ts",
     "test:appearance": "node --import tsx/esm --test src/lib/__tests__/color-mode.test.ts src/components/community/__tests__/story-studio-theme.test.ts src/components/community/__tests__/story-audience-theme.test.ts",
     "test:pool-runway": "node --import tsx/esm --test src/lib/__tests__/pool-runway.test.ts",
