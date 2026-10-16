@@ -26,7 +26,7 @@ Checked on 2026-10-15 America/Chicago (2026-10-16 UTC):
 | Public health | PASS | `/api/healthz`: HTTP 200, `status=ok`, `db=connected`. |
 | Platform readiness | PASS | `/api/readiness`: HTTP 200, `ready=true`; database, Redis, storage and media worker report ready. These readiness responses do not independently certify Exchange schema or user journeys. |
 | Media activation | OBSERVED ONLY | Existing production media flag is true. It was not changed; readiness is not approval for media rollout or mutation. |
-| Production account authorization | BLOCKED | No current validated production A/D/C role mapping and authenticated disposable-account approval evidence. |
+| Production account authorization | BLOCKED | A/B/C role labels are user-confirmed; current authenticated production identity, approval, and disposable-account evidence remain unverified. |
 | Live Exchange schema/ledger | BLOCKED | The available read-only connection did not match the confirmed application's existing database proxy. Guard returned `UNCONFIRMED_DATABASE_TARGET` before connecting; no SQL was sent and no credential value was printed. |
 | Physical devices | BLOCKED | No authorized physical iPhone/Safari or Android/Chrome session was supplied or attached. |
 
@@ -37,19 +37,18 @@ started.
 ## Account gate
 
 `docs/CROSS_COMMUNITY_MEDIA_TEST_MATRIX.md` describes **synthetic local A/B/C
-fixtures**, not reusable production logins. The attached review proposes A as
-seller, D as the discovery/pickup participant, and C as an isolation viewer, but
-requires those assignments to be checked against the actual matrix. D must not
-silently be treated as B.
+fixtures**, not reusable production logins. The user confirmed that only A, B,
+and C exist; the review's D reference was incorrect. Use A as seller/publisher,
+B as the same-community discovery/pickup participant, and C as the
+cross-community privacy viewer. The account-label ambiguity is resolved.
 
 Fresh offline validation, without production authentication requests:
 
 | Candidate input | Result | Limitation |
 | --- | --- | --- |
 | Saved A state | INVALID | Sanitized validator error: `storage state input is not valid JSON.` |
-| Saved B state | SHAPE VALID | Does not establish current sign-in, approval, active status, disposable-test authorization, community membership, or the D role. |
+| Saved B state | SHAPE VALID | Does not establish current sign-in, approval, active status, disposable-test authorization, or community membership. |
 | Saved C state | MISSING | No `USER_C_STATE_JSON` secret. |
-| Saved D state | MISSING | No `USER_D_STATE_JSON` secret. |
 
 Existing media-certification credential names do not prove Exchange role mapping
 or renewed authorization. No credentials, session tokens, user identities, or
@@ -57,12 +56,12 @@ state contents are included in this report. Temporary offline-validation state
 files were private, outside the checkout, and removed after validation.
 
 Before writes, an authorized operator must confirm the current production
-disposable accounts and A/D/C assignments, and supply usable private states
+disposable identities for the confirmed A/B/C roles, and supply usable private states
 through the secure path. Then preflight must independently verify active,
 approved identities and the intended same/different community relationships.
 Do not change memberships to manufacture a passing test.
 
-### Requested repository follow-up: approved A/D/C accounts
+### Requested repository follow-up: approved A/B/C accounts
 
 The existing repository was checked before requesting replacement account
 assignments. At the follow-up, repository HEAD was
@@ -72,9 +71,8 @@ not a newly verified production deployment.
 | Label | What the repository actually establishes |
 | --- | --- |
 | A | The local matrix's author/publisher is inserted approved into the author community. Historical production acceptance also records an approved A session on 2026-10-04; identical labels alone do not bind those two identities. |
-| B | The local matrix's reader is inserted approved into A's local community. Existing two-state media tooling uses A/B labels; it does not define an Exchange D identity. |
+| B | The local matrix's reader is inserted approved into A's local community. The user confirmed B is the intended second Exchange participant. |
 | C | The local matrix's reader is inserted approved into a different local community. Historical production acceptance records A/C in different Communities on 2026-10-04, with Hubs 1 and 18. Hub IDs are not current community IDs. |
-| D | No account/role definition or approved production mapping was found in the searched tracked canonical source, runners, or acceptance documents, apart from this report's unresolved A/D/C proposal. |
 
 Sources: `docs/CROSS_COMMUNITY_MEDIA_TEST_MATRIX.md`,
 `artifacts/api-server/src/__tests__/community-media-api-runtime.integration.test.ts`,
@@ -85,8 +83,8 @@ The matrix now records this lookup explicitly. No users were created, approved,
 relabelled, logged in, or moved between communities for this follow-up. The
 supplied updated review is review text, not live schema output or physical-device
 evidence. Existing source/CI corrections were retained rather than repeated.
-The remaining account question is whether D means the documented B role or a
-separate approved production identity. Current authentication and the other
+The user resolved the account question: “D does not exist! Only ABC.”
+No fourth identity or state is required. Current authentication and the other
 production/device gates remain unverified.
 
 ## Requested production workflow matrix
@@ -101,7 +99,7 @@ captured; a login page or local screenshot would not prove these scenarios.
 | Create and publish controlled test listing | BLOCKED | BLOCKED | Account/device gate; record exact fixture ID and publication response |
 | Refresh and verify listing persists | BLOCKED | BLOCKED | Controlled published listing; UI and server-state evidence |
 | Navigate away/back and reopen direct listing link | BLOCKED | BLOCKED | Same fixture and exact served commit |
-| Second approved participant discovers listing | BLOCKED | BLOCKED | Verified A/D roles, permitted location/discovery scope |
+| Second approved participant discovers listing | BLOCKED | BLOCKED | Authenticated A/B identities, permitted location/discovery scope |
 | Create pickup request | BLOCKED | BLOCKED | Authorized second participant and controlled active listing |
 | Seller accepts request | BLOCKED | BLOCKED | Controlled request; participant-only action evidence |
 | Seller declines and buyer retries where permitted | BLOCKED | BLOCKED | Separate controlled branch; no duplicate active request |
@@ -210,7 +208,7 @@ has already passed on GitHub or that the later source revision is deployed.
 
 Required before the production workflow can start:
 
-1. Confirm current approved, active disposable production A/D/C roles and their
+1. Verify current approved, active disposable production A/B/C identities and their
    expected community relationships; provide usable private authentication states
    through the secure path, never chat.
 2. Supply authorized physical iOS Safari and Android Chrome sessions, or have an
