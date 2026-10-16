@@ -102,10 +102,12 @@ Production target mismatch is not evidence that a migration is missing.
 | Focused API limiter/upload-failure/deletion/processing tests | 4 suites, 45 tests passed |
 | Resumable Exchange media client regressions | 4 passed |
 | Real disposable media runtime + browser suite | 6 integration tests passed; 2 Studio browser tests passed, plus companion profile/Spark matrix |
+| Community media GitHub Actions workflow | PASS on `b57c57afcd521d7e840dce52d316826f9f76fdb1`; run [38884521162](https://github.com/niakofa-cmyk/Niakofa/actions/runs/38884521162) succeeded, including Playwright browser install and `/usr/bin/google-chrome` use |
 | Workspace build references + API/web TypeScript | PASS |
 | Touched-source strict lint; workflow/OpenAPI YAML parsing; diff whitespace | PASS |
 | Authenticated manual-area browser diagnosis | PASS; saves coarse area, closes dialog, stays on the same route without a page reload |
-| Corrected local Exchange browser lifecycle/history regression | Pending final result |
+| Corrected focused local Exchange browser lifecycle/history regression | NOT CERTIFIED: helper waits for the lazy screen; separate manual-area check passes, but the focused run timed out after 90 seconds. Its failure snapshot shows completed pickup state and controls, but no clean test completion. Do not claim history-removal/reload assertions passed |
+| Full local Exchange browser suite | NOT CERTIFIED: selected browser tests exceeded their Playwright timeouts (90s and 180s); no subsequent blind rerun |
 | Production Exchange schema / migration ledger | BLOCKED before connection: saved read-only connection does not match approved target |
 | Physical iOS Safari / Android Chrome | BLOCKED: devices unavailable |
 

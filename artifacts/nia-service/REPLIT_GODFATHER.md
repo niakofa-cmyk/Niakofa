@@ -1147,9 +1147,15 @@ evidence.
   publication has a separate event rather than claiming public visibility.
 - Added a dedicated realistic media CI workflow. Moved the tracked synthetic
   incoming PNG into documented test fixtures; runtime uploads stay ignored.
+- Verified the workflow on the reviewed commit: GitHub Actions run
+  `38884521162` succeeded, including its Playwright browser setup and configured
+  Chrome executable.
 - Fixed local CLI cleanup of imported BullMQ producers so Exchange integration
   tests can terminate after success. The focused browser test now waits for
   lazy Exchange mounting before deciding whether to enter a local area.
+- A separate authenticated local manual-area check succeeded. The focused
+  lifecycle browser test still timed out at 90 seconds, and the full Exchange
+  browser suite timed out; its removal/reload assertions are not certified.
 
 See `docs/exchange-reliability-followup-2026-10-16.md` for verification results
 and remaining production/device gates. Local passing results and a repository
