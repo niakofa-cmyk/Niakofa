@@ -106,7 +106,7 @@ Production target mismatch is not evidence that a migration is missing.
 | Workspace build references + API/web TypeScript | PASS |
 | Touched-source strict lint; workflow/OpenAPI YAML parsing; diff whitespace | PASS |
 | Authenticated manual-area browser diagnosis | PASS; saves coarse area, closes dialog, stays on the same route without a page reload |
-| Corrected focused local Exchange browser lifecycle/history regression | NOT CERTIFIED: helper waits for the lazy screen; separate manual-area check passes, but the focused run timed out after 90 seconds. Its failure snapshot shows completed pickup state and controls, but no clean test completion. Do not claim history-removal/reload assertions passed |
+| Corrected focused local Exchange browser lifecycle/history regression | PASS — 2026-10-17; one focused desktop Chromium journey passed in 19.8s against the loopback app and disposable local PostgreSQL. Buyer/seller completion, both participants' private-history removal, reload persistence, shared-record retention and withdrawal verified; fixture counts were zero after the run |
 | Full local Exchange browser suite | NOT CERTIFIED: selected browser tests exceeded their Playwright timeouts (90s and 180s); no subsequent blind rerun |
 | Production Exchange schema / migration ledger | BLOCKED before connection: saved read-only connection does not match approved target |
 | Physical iOS Safari / Android Chrome | BLOCKED: devices unavailable |
@@ -117,6 +117,23 @@ behind the open dialog. The harness now waits for either the dialog or board,
 asserts the actual entered value and closed dialog, and handles the buyer's
 first visit too. Direct authenticated browser diagnosis confirmed that the
 application's manual-area control itself saves correctly.
+
+## 2026-10-17 focused browser follow-up
+
+The earlier 90-second timeout was caused by nondeterministic waits in the
+browser journey, not a slow completion API: the seller check depended on a
+background-tab poll, and the test searched for the “My posts” tab as a button.
+The journey now re-enters Messages through the Exchange UI and uses the tab's
+actual accessible role. A transient toast assertion was also removed in favor
+of the durable completed status and database confirmation timestamps. The
+focused run passed in 19.8 seconds; the broader Exchange browser suite was not
+rerun.
+
+The run used the already-responsive loopback Vite endpoint on port 18848 and
+local disposable PostgreSQL. The managed web workflow remained marked failed
+because that Vite port was already occupied; this was separate from the browser
+test timeout. No production data was accessed or changed. Physical iOS Safari
+and Android Chrome acceptance remains unverified.
 
 The managed API restart initially left an identified older local listener on
 8080. Only those stale local API children were stopped. The corrected restart

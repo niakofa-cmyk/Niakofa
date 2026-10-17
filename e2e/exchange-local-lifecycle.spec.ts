@@ -31,19 +31,11 @@ const dbRequire = createRequire(resolve(workspaceRoot, "lib/db/package.json"));
 const { Pool } = dbRequire("pg") as { Pool: typeof PostgresPool };
 type FixtureUser = { id: number; name: string; email: string; tokenVersion: number; token?: string };
 
-function reportExchangePhase(startedAt: number, phase: string): void {
-  if (process.env.EXCHANGE_LIFECYCLE_TIMING === "1") {
-    console.info(`[exchange-lifecycle] ${phase} +${Date.now() - startedAt}ms`);
-  }
-}
-
 test.describe("local Exchange UI → API → database pickup lifecycle", () => {
   test("focused: query route → Messages pickup controls → accept → two-party completion", async ({ browser }) => {
     test.skip(process.env.RUN_EXCHANGE_LOCAL_E2E !== "1", "Explicit local fixture opt-in required.");
     requireLocalTarget();
     test.setTimeout(90_000);
-    const startedAt = Date.now();
-    reportExchangePhase(startedAt, "fixture-start");
     const pool = new Pool({ connectionString: databaseURL, max: 2 });
     const runId = randomUUID().replace(/[0-9]/g, (digit) => String.fromCharCode(103 + Number(digit)));
     const area = `Exchange focus ${runId.slice(0, 8)}`;
@@ -87,7 +79,6 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       })) as Array<{ id: number; token: string }>;
       for (const user of [owner, buyer]) user.token = signed.find((item) => item.id === user.id)?.token;
       if (!owner.token || !buyer.token) throw new Error("Fixture token signing failed.");
-      reportExchangePhase(startedAt, "users-and-tokens-ready");
 
       const makePage = async (user: FixtureUser) => {
         const context = await browser.newContext({ storageState: emptyState, viewport: { width: 1280, height: 900 } });
@@ -154,7 +145,6 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       );
       expect(createdPickup.status).toBe(201);
       pickupId = createdPickup.body.pickup_request.id as number;
-      reportExchangePhase(startedAt, "listing-and-pickup-created");
 
       await enterExchange(ownerPage, "/community?tab=exchange");
       await expect(ownerPage.getByTestId(`pickup-request-${pickupId}`)).toBeVisible({ timeout: 10_000 });
@@ -167,7 +157,6 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       await expect(ownerPage.getByTestId("exchange-pickup-status")).toHaveText("requested");
       await ownerPage.getByTestId("button-exchange-accept").click();
       await expect(ownerPage.getByTestId("exchange-pickup-status")).toHaveText("accepted");
-      reportExchangePhase(startedAt, "seller-accepted");
       const accepted = await pool.query(
         "SELECT status,buyer_confirmed_at,seller_confirmed_at FROM exchange_pickup_requests WHERE id=$1",
         [pickupId],
@@ -192,19 +181,19 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       expect(firstConfirmation.rows[0].status).toBe("accepted");
       expect(firstConfirmation.rows[0].buyer_confirmed_at ?? firstConfirmation.rows[0].seller_confirmed_at).not.toBeNull();
       expect(firstConfirmation.rows[0].buyer_confirmed_at && firstConfirmation.rows[0].seller_confirmed_at).toBeFalsy();
-      reportExchangePhase(startedAt, "buyer-confirmed");
 
-      const ownerRefresh = ownerPage.waitForResponse((response) =>
-        response.url().includes("/api/community/exchange/pickup-requests")
-        && response.request().method() === "GET",
-      );
-      await ownerPage.bringToFront();
-      await ownerRefresh;
+      // Re-enter through Exchange so the seller reads the updated server state
+      // without relying on background-tab polling timing.
+      await enterExchange(ownerPage, "/community?tab=exchange");
+      await expect(ownerPage.getByTestId(`pickup-request-${pickupId}`)).toBeVisible();
+      await ownerPage.getByTestId(`button-open-exchange-messages-${pickupId}`).click();
+      await ownerPage.waitForURL(/\/messages\?/);
+      await expect(ownerPage.getByRole("button", { name: "Conversation info" })).toBeVisible();
+      await ownerPage.getByRole("button", { name: "Conversation info" }).click();
+      await expect(ownerPage.getByTestId("exchange-pickup-context-panel")).toBeVisible();
       await expect(ownerPage.getByTestId("exchange-pickup-status")).toHaveText("accepted");
       await ownerPage.getByTestId("button-exchange-confirm").click();
       await expect(ownerPage.getByTestId("exchange-pickup-status")).toHaveText("completed");
-      await expect(ownerPage.getByRole("status")).toContainText("Both participants confirmed");
-      reportExchangePhase(startedAt, "two-party-completion-confirmed");
 
       const finalState = await pool.query(
         `SELECT pickup.status,pickup.buyer_confirmed_at,pickup.seller_confirmed_at,
@@ -236,7 +225,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       await expect(buyerPage.getByTestId(`pickup-request-${pickupId}`)).toHaveCount(0);
       await enterExchange(ownerPage);
       await expect(ownerPage.getByTestId(`pickup-request-${pickupId}`)).toBeVisible();
-      await ownerPage.getByRole("button", { name: "My posts", exact: true }).click();
+      await ownerPage.getByRole("tab", { name: "My posts", exact: true }).click();
       await ownerPage.getByTestId(`card-listing-${listingId}`).getByRole("button").first().click();
       ownerPage.once("dialog", (dialog) => dialog.accept());
       await ownerPage.getByTestId("button-remove-listing-history").click();
@@ -250,7 +239,6 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       );
       expect(retainedRecord.rows[0].status).toBe("completed");
       expect(retainedRecord.rows[0].buyer_history_removed_at).not.toBeNull();
-      reportExchangePhase(startedAt, "private-history-removal-and-reload-verified");
 
       const withdrawTitle = `Focused withdraw ${runId}`;
       const withdrawListing = await api(owner, "/community/exchange/listings", {
@@ -278,9 +266,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
         [withdrawListing.body.listing.id],
       );
       expect(withdrawn.rows[0].status).toBe("withdrawn");
-      reportExchangePhase(startedAt, "withdrawal-branch-complete");
     } finally {
-      reportExchangePhase(startedAt, "fixture-cleanup-start");
       for (const context of contexts) await context.close().catch(() => undefined);
       await new Promise((resolve) => setTimeout(resolve, 300));
       if (fixtureUsers.length) {
@@ -325,7 +311,6 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
         }
       }
       await pool.end();
-      reportExchangePhase(startedAt, "fixture-cleanup-complete");
     }
   });
 

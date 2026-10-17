@@ -108,3 +108,4 @@
 - [Native browser function receivers](native-browser-function-receivers.md) — injected fetch must retain the global receiver; Node mocks alone can miss Chromium playback failures.
 - [Browser recording duration](media-recorder-duration.md) — live WebM may omit duration headers; derive duration server-side from packets rather than trusting client metadata.
 - [Studio theme verification](studio-theme-verification.md) — check final computed colors in both unified Studio and retained legacy audience screens, not just matching CSS declarations.
+- [Exchange browser timeout recovery](exchange-browser-timeout-recovery.md) — use deterministic UI re-entry instead of background polling and verify local fixture cleanup after interrupted runs.
