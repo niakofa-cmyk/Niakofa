@@ -9,6 +9,17 @@ entered value is a Playwright storage-state object. A validator failure must
 stop before any production browser request; repeated confirmations are not a
 substitute for checking the actual state file.
 
+Do not generate production sessions from candidate account credentials until
+their disposable-account approval and intended test roles are independently
+confirmed.
+
+**Why:** The user explicitly prohibited using unverified candidate credentials
+to generate sessions.
+
+**How to apply:** Credential-variable presence is not account verification.
+Check account approval and role/community mapping before any production login
+or state-generation request.
+
 **Why:** An operator confirmed an existing invalid value instead of replacing
 it, and later fresh secret entries also failed object-shape validation. The
 guard prevented all uploads, but the form status alone was misleading.

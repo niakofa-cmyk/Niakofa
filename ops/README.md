@@ -30,6 +30,69 @@ fails closed rather than silently switching to another account. Never echo,
 log, or commit storage-state JSON. The only permitted upload path is the
 separately gated helper for the private Railway bucket described below.
 
+## Exchange A/C production state preparation
+
+The guarded A/C builder creates separate Playwright states for the Exchange
+owner/publisher (A) and cross-community privacy viewer (C). It is separate from
+the existing A/B media-certification builder. The script always targets
+`https://niakofa.com`, checks `EXPECTED_COMMIT`, requires explicit confirmation,
+authenticates each account, verifies approved/unsuspended status and stable
+identity, and refuses accounts that resolve to the same user or community.
+
+Provide credentials only through secure environment/secret injection using these
+account-specific names; do not put values on a command line or in shell history:
+
+- `EXCHANGE_ACCOUNT_A_EMAIL` and `EXCHANGE_ACCOUNT_A_PASSWORD`
+- `EXCHANGE_ACCOUNT_C_EMAIL` and `EXCHANGE_ACCOUNT_C_PASSWORD`
+
+Create a fresh private directory outside the checkout, then invoke the builder
+only after confirming these are the approved disposable Exchange A/C accounts:
+
+```sh
+state_dir="$(mktemp -d /tmp/niakofa-exchange-states.XXXXXX)"
+chmod 0700 "$state_dir"
+EXCHANGE_STATE_OUTPUT_DIR="$state_dir" \
+EXPECTED_COMMIT="<40-character served production commit>" \
+CONFIRM_EXCHANGE_DISPOSABLE_ACCOUNTS=1 \
+pnpm run prepare:exchange-ac-states
+```
+
+The builder refuses existing output files and writes
+`exchange-account-a.json` and `exchange-account-c.json` with mode `0600`.
+It prints no credentials, tokens, or state JSON. Validate an individual state
+with the existing validator:
+
+```sh
+node ops/validate-user-a-state.mjs "$state_dir/exchange-account-a.json" USER_A_STATE https://niakofa.com
+node ops/validate-user-a-state.mjs "$state_dir/exchange-account-c.json" USER_C_STATE https://niakofa.com
+```
+
+The builder does not write Replit Secrets. Store validated state JSON only
+through Replit's secure Secrets interface; never paste it into chat, print it,
+or commit it. Remove the private directory when the acceptance run is complete.
+
+## Exchange production schema audit
+
+The schema audit requires a dedicated `EXCHANGE_AUDIT_DATABASE_URL` secret for
+the confirmed application Postgres target and a verified read-only database
+role. Do not substitute `DATABASE_URL`, a financial-audit connection, or the
+separate PostGIS proxy. Confirm the live Railway proxy mapping before running:
+
+```sh
+EXCHANGE_PRODUCTION_SCHEMA_AUDIT=1 \
+EXCHANGE_AUDIT_EXPECTED_HOST=ballast.proxy.rlwy.net \
+EXCHANGE_AUDIT_EXPECTED_PORT=48530 \
+pnpm exec node scripts/exchange-schema-audit.mjs
+```
+
+The URI is read from the secret and is never part of the command text. The
+existing target guard rejects mismatches before opening a connection; after
+connecting, the audit starts a read-only transaction, checks that the role has
+no write or elevated privileges, applies bounded timeouts, and performs only
+catalog/schema reads. A URI target match alone does not prove read-only access.
+Do not run this command until the operator has supplied and approved a valid
+read-only URI for the confirmed host and port.
+
 Generate state for an existing approved disposable test account. Prefer the
 interactive password prompt so the password is not placed in the command line,
 environment, or shell history:

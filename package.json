@@ -36,6 +36,8 @@
     "test:admin-county-pool-readiness-live": "playwright test e2e/admin-county-pool-readiness-live.spec.ts",
     "test:user-a-state": "node --test ops/user-a-state.test.mjs ops/user-state-serialization.test.mjs ops/materialize-storage-state.test.mjs",
     "test:deployed-acceptance-guards": "node --test ops/deployed-acceptance-guards.test.mjs",
+    "prepare:exchange-ac-states": "node ops/build-exchange-ac-states.mjs",
+    "test:exchange-ac-states": "node --test ops/exchange-ac-state.test.mjs scripts/exchange-audit-target.test.mjs",
     "test:diaspora-data-loop": "node --test scripts/diaspora-data-loop-contract.test.mjs",
     "test:diaspora-experience": "node --test scripts/diaspora-experience-contract.test.mjs",
     "test:dna-matching": "node --import tsx/esm --test scripts/dna-matching-contract.test.mjs",
