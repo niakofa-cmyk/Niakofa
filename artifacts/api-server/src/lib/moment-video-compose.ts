@@ -149,6 +149,64 @@ export function momentConcatArgs(inputListPath: string, outputPath: string, clip
   ];
 }
 
+export function durationMsFromProbe(
+  formatDuration: unknown,
+  streamDurations: unknown[] = [],
+): number | null {
+  for (const value of [formatDuration, ...streamDurations]) {
+    const seconds = typeof value === "number" || typeof value === "string" ? Number(value) : Number.NaN;
+    const durationMs = Math.round(seconds * 1000);
+    if (Number.isFinite(seconds) && seconds > 0 && Number.isSafeInteger(durationMs) && durationMs > 0) {
+      return durationMs;
+    }
+  }
+  return null;
+}
+
+/**
+ * Live browser recordings can omit both format and stream duration metadata.
+ * Use server-inspected video packet timestamps in that case; no client duration
+ * claim participates in the result.
+ */
+export function durationMsFromVideoPackets(packetOutput: string): number | null {
+  const packets: Array<{ timestamp: number; duration: number | null }> = [];
+  for (const line of packetOutput.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const [ptsValue, dtsValue, durationValue] = line.split(",");
+    const pts = Number(ptsValue);
+    const dts = Number(dtsValue);
+    const timestamp = Number.isFinite(pts) ? pts : dts;
+    if (!Number.isFinite(timestamp)) continue;
+    const packetDuration = Number(durationValue);
+    packets.push({
+      timestamp,
+      duration: Number.isFinite(packetDuration) && packetDuration > 0 ? packetDuration : null,
+    });
+  }
+  if (packets.length === 0) return null;
+
+  const start = Math.min(...packets.map((packet) => packet.timestamp));
+  let end = Math.max(...packets.map((packet) =>
+    packet.timestamp + (packet.duration ?? 0),
+  ));
+  const lastTimestamp = Math.max(...packets.map((packet) => packet.timestamp));
+  if (end <= lastTimestamp) {
+    const orderedTimestamps = [...new Set(packets.map((packet) => packet.timestamp))]
+      .sort((left, right) => left - right);
+    const recentIntervals = orderedTimestamps.slice(-17).slice(1)
+      .map((timestamp, index) => timestamp - orderedTimestamps.slice(-17)[index]!)
+      .filter((interval) => Number.isFinite(interval) && interval > 0)
+      .sort((left, right) => left - right);
+    const typicalInterval = recentIntervals.length
+      ? recentIntervals[Math.floor(recentIntervals.length / 2)]!
+      : 0;
+    end = lastTimestamp + typicalInterval;
+  }
+
+  const durationMs = Math.round((end - start) * 1000);
+  return Number.isSafeInteger(durationMs) && durationMs > 0 ? durationMs : null;
+}
+
 export function withinMomentTotalVideoDurationLimit(durationsMs: number[]): boolean {
   return durationsMs.every((duration) => Number.isFinite(duration)
       && duration > 0

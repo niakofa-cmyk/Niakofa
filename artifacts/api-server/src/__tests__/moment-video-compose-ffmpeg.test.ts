@@ -8,6 +8,8 @@ import { describe, expect, it } from "@jest/globals";
 import { MAX_MEDIA_BYTES } from "../lib/media-validation";
 import { getMediaToolPaths } from "../lib/mediaCapabilities";
 import {
+  durationMsFromProbe,
+  durationMsFromVideoPackets,
   momentClipNormalizeArgs,
   momentConcatArgs,
   withinMomentDurationLimit,
@@ -50,6 +52,56 @@ async function probe(filePath: string): Promise<{
 }
 
 describe("real FFmpeg Moment camera-clip composition", () => {
+  mediaIt("composes a browser-style WebM stream with no container duration header", async () => {
+    await runTool(ffmpeg, ["-version"]);
+    await runTool(ffprobe, ["-version"]);
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "niakofa-moment-webm-test-"));
+    try {
+      const webmPath = path.join(tempDir, "live-recording.webm");
+      const generated = spawnSync(ffmpeg, [
+        "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=24:duration=0.8",
+        "-an", "-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "8",
+        "-f", "webm", "pipe:1",
+      ], { encoding: "buffer", maxBuffer: 8 * 1024 * 1024, timeout: 25_000 });
+      if (generated.error) throw generated.error;
+      if (generated.status !== 0) throw new Error(generated.stderr.toString());
+      await writeFile(webmPath, generated.stdout);
+
+      const metadata = JSON.parse(await runTool(ffprobe, [
+        "-v", "error",
+        "-show_entries", "format=duration:stream=codec_type,duration",
+        "-of", "json",
+        webmPath,
+      ])) as {
+        format?: { duration?: string };
+        streams?: Array<{ codec_type?: string; duration?: string }>;
+      };
+      expect(durationMsFromProbe(
+        metadata.format?.duration,
+        (metadata.streams ?? []).filter((stream) => stream.codec_type === "video").map((stream) => stream.duration),
+      )).toBeNull();
+
+      const packetOutput = await runTool(ffprobe, [
+        "-v", "error", "-select_streams", "v:0", "-show_packets",
+        "-show_entries", "packet=pts_time,dts_time,duration_time", "-of", "csv=p=0",
+        webmPath,
+      ]);
+      const durationMs = durationMsFromVideoPackets(packetOutput);
+      expect(durationMs).not.toBeNull();
+      expect(durationMs!).toBeGreaterThan(0);
+
+      const normalizedPath = path.join(tempDir, "normalized.mp4");
+      await runTool(ffmpeg, momentClipNormalizeArgs(webmPath, normalizedPath, durationMs!, false));
+      const normalized = await probe(normalizedPath);
+      expect(normalized.streams.some((stream) => stream.codec_type === "video")).toBe(true);
+      expect(normalized.streams.some((stream) => stream.codec_type === "audio")).toBe(true);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+      expect(existsSync(tempDir)).toBe(false);
+    }
+  }, 90_000);
+
   mediaIt("normalizes silent and audio clips, concatenates them, probes output, and removes all temporary files", async () => {
     await runTool(ffmpeg, ["-version"]);
     await runTool(ffprobe, ["-version"]);
