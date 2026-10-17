@@ -4,6 +4,8 @@ import {
   MOMENT_COMPOSE_INTENT,
   isPublishedStoryMediaContext,
   isUnfinishedResumableUpload,
+  durationMsFromProbe,
+  durationMsFromVideoPackets,
   momentComposeAttemptOutputKey,
   momentClipNormalizeArgs,
   momentCompositionAttemptOwnsJob,
@@ -122,6 +124,22 @@ describe("opt-in Moment camera-clip composition contract", () => {
     expect(withinMomentDurationLimit([180_001])).toBe(false);
     expect(withinMomentDurationLimit([])).toBe(false);
     expect(withinMomentDurationLimit([20_000, 0])).toBe(false);
+  });
+
+  it("uses format or video-stream duration metadata when it is available", () => {
+    expect(durationMsFromProbe("1.234", ["2.345"])).toBe(1_234);
+    expect(durationMsFromProbe("N/A", ["2.345"])).toBe(2_345);
+    expect(durationMsFromProbe("N/A", ["N/A"])).toBeNull();
+  });
+
+  it("derives a positive duration from video packet timestamps when container metadata is absent", () => {
+    expect(durationMsFromVideoPackets("0.000000,0.000000,0.040000\n0.040000,0.040000,0.040000\n"))
+      .toBe(80);
+    expect(durationMsFromVideoPackets("N/A,0.000000,0.040000\nN/A,0.040000,0.040000\n"))
+      .toBe(80);
+    expect(durationMsFromVideoPackets("0.000000,N/A,N/A\n0.040000,N/A,N/A\n"))
+      .toBe(80);
+    expect(durationMsFromVideoPackets("N/A,N/A,N/A\n")).toBeNull();
   });
 
   it("normalizes silent clips by synthesizing a stereo audio track", () => {

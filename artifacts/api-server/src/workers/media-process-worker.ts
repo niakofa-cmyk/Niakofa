@@ -40,6 +40,8 @@ import {
   momentClipNormalizeArgs,
   momentComposeAttemptOutputKey,
   momentConcatArgs,
+  durationMsFromProbe,
+  durationMsFromVideoPackets,
   reconcileMomentCompositionPromotion,
   withDurableCleanupLedger,
   withinMomentDurationLimit,
@@ -528,15 +530,29 @@ async function cancelClaimedJob(jobId: number, attempt?: number): Promise<void> 
 type ProbedStreams = { codec_type?: string; width?: number; height?: number };
 async function probeCompositionFile(filePath: string): Promise<{ durationMs: number; streams: ProbedStreams[] }> {
   const result = await execFileAsync(mediaToolPaths.ffprobe, [
-    "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", filePath,
+    "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height,duration", "-of", "json", filePath,
   ], { timeout: 10_000, maxBuffer: 256 * 1024 });
   const parsed = JSON.parse(result.stdout) as {
     format?: { duration?: string };
-    streams?: ProbedStreams[];
+    streams?: Array<ProbedStreams & { duration?: string }>;
   };
-  const seconds = Number(parsed.format?.duration);
-  if (!Number.isFinite(seconds) || seconds <= 0) throw new Error("MEDIA_COMPOSITION_INVALID");
-  return { durationMs: Math.round(seconds * 1000), streams: parsed.streams ?? [] };
+  let durationMs = durationMsFromProbe(
+    parsed.format?.duration,
+    (parsed.streams ?? []).filter((stream) => stream.codec_type === "video").map((stream) => stream.duration),
+  );
+  if (durationMs === null) {
+    const packetResult = await execFileAsync(mediaToolPaths.ffprobe, [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_packets",
+      "-show_entries", "packet=pts_time,dts_time,duration_time",
+      "-of", "csv=p=0",
+      filePath,
+    ], { timeout: 10_000, maxBuffer: 2 * 1024 * 1024 });
+    durationMs = durationMsFromVideoPackets(packetResult.stdout);
+  }
+  if (durationMs === null) throw new Error("MEDIA_COMPOSITION_INVALID");
+  return { durationMs, streams: parsed.streams ?? [] };
 }
 
 async function processMomentComposition(mediaAssetId: number, jobId: number, attempt: number): Promise<void> {
