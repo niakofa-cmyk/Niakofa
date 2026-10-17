@@ -301,6 +301,57 @@ describe("POST /api/users/login", () => {
   });
 });
 
+describe("user profile responses", () => {
+  const accountWithSensitiveFields = () => ({
+    id: 42,
+    name: "Profile Fixture",
+    email: "profile-fixture@example.test",
+    approval_status: "approved",
+    community_id: 10,
+    password_hash: "fixture-password-hash",
+    password_reset_code: "fixture-reset-code",
+    password_reset_expires_at: new Date("2030-01-01T00:00:00.000Z"),
+    google_id: "fixture-google-id",
+    is_disposable_test_account: true,
+  });
+
+  const expectPrivateFieldsOmitted = (body: Record<string, unknown>) => {
+    expect(body).not.toHaveProperty("password_hash");
+    expect(body).not.toHaveProperty("password_reset_code");
+    expect(body).not.toHaveProperty("password_reset_expires_at");
+    expect(body).not.toHaveProperty("google_id");
+    expect(body).not.toHaveProperty("is_disposable_test_account");
+  };
+
+  it("omits credential and internal fields from GET /api/users/:id", async () => {
+    mockDb.limit.mockResolvedValueOnce([accountWithSensitiveFields()]);
+
+    const res = await request(app)
+      .get("/api/users/42")
+      .set("Authorization", "Bearer test");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: 42, name: "Profile Fixture", community_id: 10 });
+    expectPrivateFieldsOmitted(res.body);
+  });
+
+  it("omits credential and internal fields from PATCH /api/users/:id", async () => {
+    mockDb.returning.mockResolvedValueOnce([{
+      ...accountWithSensitiveFields(),
+      name: "Updated Profile Fixture",
+    }]);
+
+    const res = await request(app)
+      .patch("/api/users/42")
+      .set("Authorization", "Bearer test")
+      .send({ name: "Updated Profile Fixture" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: 42, name: "Updated Profile Fixture", community_id: 10 });
+    expectPrivateFieldsOmitted(res.body);
+  });
+});
+
 describe("DELETE /api/users/me", () => {
   it("blocks deletion while the account owns an active request", async () => {
     mockDb.limit.mockResolvedValueOnce([{ id: 77, status: "en_route" }]);

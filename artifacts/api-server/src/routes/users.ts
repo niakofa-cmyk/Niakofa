@@ -33,6 +33,26 @@ import { isValidSpiritAnimal } from "../lib/spirit-animal";
 
 const RESERVED_USERNAMES = new Set(["admin", "niakofa", "support", "help", "root", "system"]);
 
+type SensitiveUserFields = {
+  password_hash?: unknown;
+  password_reset_code?: unknown;
+  password_reset_expires_at?: unknown;
+  google_id?: unknown;
+  is_disposable_test_account?: unknown;
+};
+
+function stripSensitiveUserFields<T extends SensitiveUserFields>(user: T) {
+  const {
+    password_hash: _passwordHash,
+    password_reset_code: _passwordResetCode,
+    password_reset_expires_at: _passwordResetExpiresAt,
+    google_id: _googleId,
+    is_disposable_test_account: _disposableTestAccount,
+    ...safeUser
+  } = user;
+  return safeUser;
+}
+
 const VALID_LOCATION_MARKER_STYLES = ["puck", "spirit"] as const;
 function isValidLocationMarkerStyle(value: unknown): value is typeof VALID_LOCATION_MARKER_STYLES[number] {
   return typeof value === "string" &&
@@ -179,9 +199,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
 
   _clearAttempts(user.id); // successful login — reset the failure counter
   const token = signTokenById(user.id, user.token_version);
-  // Strip all sensitive fields — including password_reset_* which were previously
-  // leaked in the login response (zip-file fix BUG-SEC-01).
-  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
+  const safeUser = stripSensitiveUserFields(user);
   return res.json({ user: safeUser, token });
 });
 
@@ -282,7 +300,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
   }).returning();
   const token = signTokenById(user.id, user.token_version);
   // Strip all sensitive fields (zip-file fix BUG-SEC-01 extended to register).
-  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
+  const safeUser = stripSensitiveUserFields(user);
 
   // ── Post-registration side-effects (non-blocking) ─────────────────────────
   // ALL new registrations now require admin approval, so always notify the
@@ -437,7 +455,7 @@ router.post(["/users/set-initial-password", "/users/reset-password"], authLimite
     .returning();
 
   const token = signTokenById(updated.id, updated.token_version);
-  const { password_hash: _ph2, password_reset_code: _prc, is_disposable_test_account: _disposableTestAccount, ...safeUser } = updated;
+  const safeUser = stripSensitiveUserFields(updated);
   return res.json({ user: safeUser, token });
 });
 
@@ -630,7 +648,7 @@ router.get("/users/:id", requireAuth, resolveMeParam, requireOwnership(), async 
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
+  const safeUser = stripSensitiveUserFields(user);
   return res.json(safeUser);
 });
 
@@ -668,7 +686,7 @@ router.patch("/users/:id", requireAuth, resolveMeParam, requireOwnership(), asyn
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safeUser } = user;
+  const safeUser = stripSensitiveUserFields(user);
   return res.json(safeUser);
 });
 
@@ -1517,7 +1535,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
       // matching comment on PATCH /users/:id/moderation.
       broadcast({ type: "helper_offline", payload: { id } });
     }
-    const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safe } = updated;
+    const safe = stripSensitiveUserFields(updated);
     return res.json(safe);
   }
 
@@ -1556,7 +1574,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
     .returning();
 
   if (!updated) return res.status(404).json({ error: "User not found" });
-  const { password_hash: _ph, is_disposable_test_account: _disposableTestAccount, ...safe } = updated;
+  const safe = stripSensitiveUserFields(updated);
 
   // Notify admin in real time that a new helper application needs review.
   // (The register-time is_helper=true path also broadcasts this, but most
