@@ -79,6 +79,21 @@ read-only.
 Postgres database. Use an approved query path for the confirmed app target.
 Never create a proxy or infer read-only privileges from active status.
 
+As of 2026-10-17, live Railway inventory places `ballast.proxy.rlwy.net:48530`
+on the production **Postgres** service, while **PostGIS** has a separate
+`reseau.proxy.rlwy.net:46078` proxy. The API service remains `zesty-ambition`;
+the app's `DATABASE_URL` was previously operator-confirmed to reference Postgres.
+Recheck the live mapping before setting an audit target.
+
+**Why:** The live proxy-to-service mapping differs from the earlier inventory.
+An expected host/port must identify the actual application database, not merely
+any reachable PostgreSQL proxy.
+
+**How to apply:** Confirm the current app database and proxy with Railway's live
+service inventory, then run the schema audit with that exact host/port, explicit
+production approval, and a verified read-only role. Do not retrieve or print a
+connection secret or substitute Replit-managed production Postgres for Railway.
+
 ## Credential validation
 
 Secret presence or secure-form confirmation does not prove that a Replit process can authenticate with the saved connection value. An operator's successful interactive login also does not validate a URI's password encoding or the value saved in Replit.
