@@ -115,7 +115,32 @@ export function SharedMediaPanel({
         </header>
         <div className="border-b border-border p-3">
           <div className="grid grid-cols-3 gap-1 rounded-2xl bg-background p-1 sm:grid-cols-6">
-            {tabs.map(({ value, label, icon: Icon }) => <button key={value} type="button" onClick={() => setTab(value)} className={`flex min-h-10 items-center justify-center gap-1 rounded-xl px-2 text-[10px] font-black ${tab === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}><Icon className="h-3.5 w-3.5" />{label}</button>)}
+            {tabs.map(({ value, label, icon: Icon }) => {
+              const selected = tab === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setTab(value)}
+                  aria-pressed={selected}
+                  className={`group flex min-h-10 items-center justify-center gap-1 rounded-xl px-2 text-[10px] font-black transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                    selected
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <Icon
+                    aria-hidden="true"
+                    className={`h-3.5 w-3.5 shrink-0 stroke-current ${
+                      selected
+                        ? "text-primary-foreground"
+                        : "text-muted-foreground group-hover:text-foreground"
+                    }`}
+                  />
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
