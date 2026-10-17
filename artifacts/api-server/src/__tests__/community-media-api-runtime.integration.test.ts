@@ -1469,10 +1469,12 @@ suite("isolated cross-community content and media access matrix", () => {
       expect(heldMediaRead.status).toBe(404);
       await pool.query("UPDATE exchange_listings SET moderation_status = 'approved' WHERE id = $1", [listingId]);
 
+      // UUID digit runs can look like phone numbers to the public-text privacy filter.
+      const privacySafeSuffix = randomUUID().replace(/[0-9-]/g, "");
       const textEdit = await withMediaPlatformEnabled(() => request(app)
         .patch(`/community/exchange/listings/${listingId}`)
         .set("Authorization", `Bearer ${authorToken}`)
-        .send({ title: `Edited media fixture ${randomUUID()}` }));
+        .send({ title: `Edited media fixture ${privacySafeSuffix}` }));
       expect(textEdit.status).toBe(200);
       expect(textEdit.body.listing.media).toHaveLength(2);
 
