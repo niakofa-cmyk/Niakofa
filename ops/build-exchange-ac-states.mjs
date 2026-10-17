@@ -64,7 +64,7 @@ function readAccountIdentity(user, label) {
   const id = Number(user.id);
   const communityId = user.community_id === null ? null : Number(user.community_id);
   if (!Number.isSafeInteger(id) || id < 1 || user.approval_status !== "approved"
-    || user.is_suspended === true) {
+    || user.is_suspended !== false) {
     fail(`account ${label} is not approved and active.`);
   }
   if (!Object.hasOwn(user, "community_id") || communityId === null
@@ -138,7 +138,18 @@ async function authenticateAccount(fetchImpl, account) {
         origin: EXCHANGE_ACCEPTANCE_ORIGIN,
         localStorage: [
           { name: "niakofa_token", value: token },
-          { name: "niakofa_user", value: JSON.stringify(login.user) },
+          // The Exchange acceptance runner needs only the verified identity.
+          // Do not persist the full profile response, which can contain
+          // unrelated or bulky personal data.
+          {
+            name: "niakofa_user",
+            value: JSON.stringify({
+              id: identity.id,
+              approval_status: "approved",
+              is_suspended: false,
+              community_id: identity.communityId,
+            }),
+          },
         ],
       }],
     },

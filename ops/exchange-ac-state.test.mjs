@@ -46,17 +46,20 @@ function mockFetch({
   approvalA = "approved",
   approvalC = "approved",
   sensitiveUserField = false,
+  largeProfileField = false,
   servedCommit = expectedCommit,
   loginStatus = 200,
 } = {}) {
   const users = new Map([
     ["approved-a@example.test", {
       user: { id: 7, approval_status: approvalA, is_suspended: false, community_id: communityA,
+        ...(largeProfileField ? { unrelated_profile_payload: "x".repeat(140_000) } : {}),
         ...(sensitiveUserField ? { password_hash: "must-not-be-written" } : {}) },
       token: tokenA,
     }],
     ["approved-c@example.test", {
-      user: { id: 8, approval_status: approvalC, is_suspended: false, community_id: communityC },
+      user: { id: 8, approval_status: approvalC, is_suspended: false, community_id: communityC,
+        ...(largeProfileField ? { unrelated_profile_payload: "x".repeat(140_000) } : {}) },
       token: tokenC,
     }],
   ]);
@@ -85,7 +88,7 @@ function mockFetch({
 
 test("creates separate approved A/C states at the canonical origin with private permissions", async (t) => {
   const outputDir = await privateDirectory(t);
-  const { fetchImpl, calls } = mockFetch();
+  const { fetchImpl, calls } = mockFetch({ largeProfileField: true });
 
   const result = await buildExchangeAcStates({
     env: testEnv(outputDir),
@@ -100,16 +103,28 @@ test("creates separate approved A/C states at the canonical origin with private 
     "/api/users/login",
     "/api/users/8",
   ]);
-  for (const [filename, expectedToken, expectedUser] of [
-    ["exchange-account-a.json", tokenA, 7],
-    ["exchange-account-c.json", tokenC, 8],
+  for (const [filename, expectedToken, expectedUser, expectedCommunity] of [
+    ["exchange-account-a.json", tokenA, 7, 10],
+    ["exchange-account-c.json", tokenC, 8, 20],
   ]) {
     const statePath = path.join(outputDir, filename);
     assert.equal((await stat(statePath)).mode & 0o777, 0o600);
+    assert.ok((await stat(statePath)).size < 16 * 1024, "only the minimal identity should be stored");
     const state = JSON.parse(await readFile(statePath, "utf8"));
     assert.equal(state.origins[0].origin, EXCHANGE_ACCEPTANCE_ORIGIN);
-    assert.equal(state.origins[0].localStorage.find((entry) => entry.name === "niakofa_token").value, expectedToken);
-    assert.equal(JSON.parse(state.origins[0].localStorage.find((entry) => entry.name === "niakofa_user").value).id, expectedUser);
+    assert.equal(
+      state.origins[0].localStorage.find((entry) => entry.name === "niakofa_token").value,
+      expectedToken,
+    );
+    assert.deepEqual(
+      JSON.parse(state.origins[0].localStorage.find((entry) => entry.name === "niakofa_user").value),
+      {
+        id: expectedUser,
+        approval_status: "approved",
+        is_suspended: false,
+        community_id: expectedCommunity,
+      },
+    );
   }
 });
 
