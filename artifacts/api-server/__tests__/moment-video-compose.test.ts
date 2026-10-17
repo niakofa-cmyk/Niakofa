@@ -142,6 +142,13 @@ describe("opt-in Moment camera-clip composition contract", () => {
     expect(durationMsFromVideoPackets("N/A,N/A,N/A\n")).toBeNull();
   });
 
+  it("rejects empty FFprobe timestamp fields instead of converting them to zero", () => {
+    expect(durationMsFromVideoPackets(",,0.040000\n")).toBeNull();
+    expect(durationMsFromVideoPackets(",0.000000,0.040000\n,0.040000,0.040000\n"))
+      .toBe(80);
+    expect(durationMsFromVideoPackets("0.000000,,\n0.040000,,\n")).toBe(80);
+  });
+
   it("normalizes silent clips by synthesizing a stereo audio track", () => {
     const args = momentClipNormalizeArgs("in.mp4", "out.mp4", 12_345, false);
     expect(args).toContain("anullsrc=channel_layout=stereo:sample_rate=48000");

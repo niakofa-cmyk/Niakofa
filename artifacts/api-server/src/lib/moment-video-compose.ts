@@ -170,17 +170,20 @@ export function durationMsFromProbe(
  */
 export function durationMsFromVideoPackets(packetOutput: string): number | null {
   const packets: Array<{ timestamp: number; duration: number | null }> = [];
+  const parseSeconds = (value: string | undefined): number | null => {
+    if (value === undefined || value.trim() === "" || value.trim() === "N/A") return null;
+    const seconds = Number(value);
+    return Number.isFinite(seconds) ? seconds : null;
+  };
   for (const line of packetOutput.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const [ptsValue, dtsValue, durationValue] = line.split(",");
-    const pts = Number(ptsValue);
-    const dts = Number(dtsValue);
-    const timestamp = Number.isFinite(pts) ? pts : dts;
-    if (!Number.isFinite(timestamp)) continue;
-    const packetDuration = Number(durationValue);
+    const timestamp = parseSeconds(ptsValue) ?? parseSeconds(dtsValue);
+    if (timestamp === null) continue;
+    const packetDuration = parseSeconds(durationValue);
     packets.push({
       timestamp,
-      duration: Number.isFinite(packetDuration) && packetDuration > 0 ? packetDuration : null,
+      duration: packetDuration !== null && packetDuration > 0 ? packetDuration : null,
     });
   }
   if (packets.length === 0) return null;

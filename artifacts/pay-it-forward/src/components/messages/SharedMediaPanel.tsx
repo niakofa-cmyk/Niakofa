@@ -1,4 +1,5 @@
 import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
+import { filterSharedMediaContextItems } from "@/lib/shared-media-filter";
 
 import { useEffect, useMemo, useState } from "react";
 import { FileText, Image as ImageIcon, Link2, Loader2, MapPinned, Music2, Video, X } from "lucide-react";
@@ -65,7 +66,9 @@ export function SharedMediaPanel({
   }, [items, tab]);
 
   const contextItems = useMemo(
-    () => items.filter((item) => item.attachment_type === tab),
+    () => tab === "links" || tab === "location"
+      ? filterSharedMediaContextItems(items, tab)
+      : [],
     [items, tab],
   );
 
