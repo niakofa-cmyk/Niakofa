@@ -3,10 +3,14 @@ import { resolve } from "node:path";
 
 const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
 const cleanupLockName = "niakofa:exchange-local-lifecycle:e2e";
-const fixtureEmailPattern =
-  "^exchange-focus-[a-p]{8}-[a-p]{4}-[a-p]{4}-[a-p]{4}-[a-p]{12}-(owner|buyer)@example[.]invalid$";
-const fixtureRunIdFromEmail =
-  /^exchange-focus-([a-p]{8}-[a-p]{4}-[a-p]{4}-[a-p]{4}-[a-p]{12})-(?:owner|buyer)@example\.invalid$/;
+const fixtureEmailPatterns = [
+  "^exchange-focus-[a-p]{8}-[a-p]{4}-[a-p]{4}-[a-p]{4}-[a-p]{12}-(owner|buyer)@example[.]invalid$",
+  "^exchange-[a-p]{8}-[a-p]{4}-[a-p]{4}-[a-p]{4}-[a-p]{12}-(owner|buyer|outsider)@example[.]invalid$",
+];
+const fixtureRunIdFromEmails = [
+  /^exchange-focus-([a-p]{8}-[a-p]{4}-[a-p]{4}-[a-p]{4}-[a-p]{12})-(?:owner|buyer)@example\.invalid$/,
+  /^exchange-([a-p]{8}-[a-p]{4}-[a-p]{4}-[a-p]{4}-[a-p]{12})-(?:owner|buyer|outsider)@example\.invalid$/,
+];
 
 function requireLocalTargets(): void {
   const baseURL = process.env.BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? "";
@@ -29,23 +33,30 @@ async function removeInterruptedFixtures(client: {
   try {
     const users = await client.query(
       `SELECT id, email FROM users
-       WHERE is_disposable_test_account = true AND email ~ $1`,
-      [fixtureEmailPattern],
+       WHERE is_disposable_test_account = true
+         AND (email ~ $1 OR email ~ $2)`,
+      fixtureEmailPatterns,
     );
     const userIds = users.rows.map((row) => Number(row.id));
     const runIds = [...new Set(users.rows.flatMap((row) => {
-      const match = fixtureRunIdFromEmail.exec(String(row.email));
-      return match ? [match[1]] : [];
+      for (const pattern of fixtureRunIdFromEmails) {
+        const match = pattern.exec(String(row.email));
+        if (match) return [match[1]];
+      }
+      return [];
     }))];
     const listingTitles = runIds.flatMap((runId) => [
       `Focused pickup ${runId}`,
       `Focused withdraw ${runId}`,
     ]);
+    const listingTitlePatterns = runIds.map((runId) => `%${runId}%`);
 
     const listings = await client.query(
       `SELECT id FROM exchange_listings
-       WHERE seller_id = ANY($1::int[]) OR title = ANY($2::text[])`,
-      [userIds, listingTitles],
+       WHERE seller_id = ANY($1::int[])
+          OR title = ANY($2::text[])
+          OR title LIKE ANY($3::text[])`,
+      [userIds, listingTitles, listingTitlePatterns],
     );
     const listingIds = listings.rows.map((row) => Number(row.id));
     const pickups = await client.query(
