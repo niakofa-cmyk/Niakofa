@@ -12,6 +12,7 @@ if (isDeployedTarget && !process.env.USER_A_STATE) {
 
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/exchange-local-lifecycle-setup.ts",
   timeout: 30_000,
   expect: {
     timeout: 5_000,
