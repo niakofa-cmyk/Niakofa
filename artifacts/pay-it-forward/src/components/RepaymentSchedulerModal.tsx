@@ -7,6 +7,7 @@ import {
 import { Button } from "./ui/button";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { authHeaders } from "@/lib/auth";
+import { clampRepaymentAmount, getRepaymentMaxAmount } from "@/lib/repayment-amount";
 import { toast } from "@/hooks/use-toast";
 
 interface RepaymentSchedulerModalProps {
@@ -228,16 +229,19 @@ export function RepaymentSchedulerModal({
   const [planLoading, setPlanLoading] = useState(false);
 
   const outstanding = request ? (request.pledge_amount ?? 0) - (request.pledge_paid ?? 0) : 0;
-  const maxAmount = Math.max(outstanding, 100);
+  const payableOutstanding = getRepaymentMaxAmount(outstanding);
+  const maxAmount = Math.max(payableOutstanding, 0.01);
+  const selectedAmount = clampRepaymentAmount(amount, outstanding);
+  const amountControlValue = selectedAmount || Math.min(10, maxAmount);
 
   const isInstallments = planMode !== "one_time";
   const installmentCount = planMode === "installments_4" ? 4 : 2;
   const periodOption = PERIOD_OPTIONS.find(p => p.period === period) ?? PERIOD_OPTIONS[1];
 
   const amountPerInstallment = useMemo(() => {
-    if (!isInstallments) return amount;
-    return parseFloat((amount / installmentCount).toFixed(2));
-  }, [amount, installmentCount, isInstallments]);
+    if (!isInstallments) return selectedAmount;
+    return parseFloat((selectedAmount / installmentCount).toFixed(2));
+  }, [selectedAmount, installmentCount, isInstallments]);
 
   // Compute installment schedule for preview
   const installmentDates = useMemo(() => {
@@ -246,8 +250,8 @@ export function RepaymentSchedulerModal({
   }, [isInstallments, selectedDate, installmentCount, periodOption.days]);
 
   const handleOneTimeSchedule = () => {
-    if (!selectedDate) return;
-    onSchedule(selectedDate, amount);
+    if (!selectedDate || selectedAmount <= 0) return;
+    onSchedule(selectedDate, selectedAmount);
     setConfirmed(true);
     setTimeout(() => {
       setConfirmed(false);
@@ -257,7 +261,7 @@ export function RepaymentSchedulerModal({
   };
 
   const handleInstallmentPlan = async () => {
-    if (!selectedDate || !request || !userId) return;
+    if (!selectedDate || !request || !userId || selectedAmount <= 0) return;
     setPlanLoading(true);
     try {
       const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -267,7 +271,7 @@ export function RepaymentSchedulerModal({
         body: JSON.stringify({
           plan_type: planMode,
           period,
-          total_amount: amount,
+          total_amount: selectedAmount,
           installment_count: installmentCount,
           start_date: selectedDate.toISOString(),
         }),
@@ -313,7 +317,7 @@ export function RepaymentSchedulerModal({
   };
 
   const isLoading = isScheduling || planLoading;
-  const canConfirm = !!selectedDate && !isLoading;
+  const canConfirm = !!selectedDate && selectedAmount > 0 && !isLoading;
 
   return (
     <AnimatePresence>
@@ -370,7 +374,7 @@ export function RepaymentSchedulerModal({
                   <div className="text-sm text-muted-foreground mt-2 leading-relaxed">
                     {isInstallments
                       ? `${installmentCount} payments of $${amountPerInstallment.toFixed(2)} starting ${selectedDate?.toLocaleDateString("en-US", { month: "long", day: "numeric" })}`
-                      : `$${amount.toFixed(2)} on ${selectedDate?.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`
+                      : `$${selectedAmount.toFixed(2)} on ${selectedDate?.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`
                     }
                   </div>
                   <div className="flex items-center justify-center gap-1.5 mt-3 text-green-400 text-xs font-semibold">
@@ -442,7 +446,7 @@ export function RepaymentSchedulerModal({
                         <DollarSign className="w-3.5 h-3.5" /> Total Amount
                       </div>
                       <div className="text-right">
-                        <div className="text-xl font-black text-primary">${amount.toFixed(2)}</div>
+                        <div className="text-xl font-black text-primary">${selectedAmount.toFixed(2)}</div>
                         {isInstallments && (
                           <div className="text-[10px] text-muted-foreground">
                             {installmentCount} × ${amountPerInstallment.toFixed(2)}
@@ -453,21 +457,22 @@ export function RepaymentSchedulerModal({
 
                     <input
                       type="range"
-                      min={1}
+                      min={0.01}
                       max={maxAmount}
-                      step={1}
-                      value={amount}
+                      step={0.01}
+                      value={amountControlValue}
+                      disabled={outstanding <= 0}
                       onChange={e => setAmount(Number(e.target.value))}
                       className="w-full accent-[hsl(190,100%,50%)] h-2 rounded-full cursor-pointer"
                     />
 
                     <div className="flex gap-2">
-                      {AMOUNT_PRESETS.filter(p => p <= maxAmount + 10).map(preset => (
+                      {AMOUNT_PRESETS.filter(p => p <= payableOutstanding).map(preset => (
                         <button
                           key={preset}
                           onClick={() => setAmount(preset)}
                           className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${
-                            amount === preset
+                            selectedAmount === preset
                               ? "bg-primary text-primary-foreground border-primary"
                               : "bg-background border-border text-muted-foreground hover:border-primary/50"
                           }`}
@@ -531,7 +536,7 @@ export function RepaymentSchedulerModal({
                       animate={{ opacity: 1, y: 0 }}
                       className="bg-muted/50 rounded-xl p-3 text-sm text-muted-foreground"
                     >
-                      <span className="text-primary font-bold">${amount.toFixed(2)}</span> will be set for{" "}
+                      <span className="text-primary font-bold">${selectedAmount.toFixed(2)}</span> will be set for{" "}
                       <span className="text-foreground font-bold">
                         {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
                       </span>
@@ -540,7 +545,7 @@ export function RepaymentSchedulerModal({
                   )}
 
                   {/* Impact banner */}
-                  {amount >= 5 && <ImpactBanner total={amount} />}
+                  {selectedAmount >= 5 && <ImpactBanner total={selectedAmount} />}
 
                   {/* Confirm button */}
                   <Button

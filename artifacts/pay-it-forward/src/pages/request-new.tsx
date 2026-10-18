@@ -82,8 +82,7 @@ const formSchema = z.object({
   urgency: z.enum(["low", "medium", "high", "emergency"]),
   pay_it_forward_amount: z.number().optional(),
   pledge_amount: z.number().optional(),
-  // Optional task duration estimate — used by the Community Pool to compute a
-  // livable-wage guaranteed minimum (hours × $15/hr rate vs flat floor).
+  // Optional task duration estimate used by the Community Pool's payout calculation.
   estimated_hours: z.number().min(0.5, "At least 0.5 hours").max(24, "Max 24 hours").optional(),
 });
 
@@ -862,7 +861,7 @@ export default function NewRequestScreen() {
                 )}
               />
 
-              {/* Estimated hours — used by the pool to compute a livable-wage guarantee */}
+              {/* Estimated hours — an input to the pool's payout calculation */}
               {paymentType !== "goodwill" && (
                 <FormField
                   control={form.control}
@@ -888,7 +887,7 @@ export default function NewRequestScreen() {
                         />
                       </FormControl>
                       <p className="text-[11px] text-muted-foreground mt-1">
-                        The Community Pool uses this to scale the helper's guaranteed minimum — longer tasks earn proportionally more.
+                        The Community Pool uses this estimate when calculating a helper minimum. The amount and timing depend on the local pool's available funds and rate.
                       </p>
                       <FormMessage />
                     </FormItem>

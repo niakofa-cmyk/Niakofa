@@ -603,20 +603,20 @@ function PledgePoolDashboard() {
 
   return (
     <div className="space-y-4">
-      {/* Helper Economics — livable-wage proof metric */}
-      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mb-2">Helper Economics</div>
+      {/* Requester repayments are not a measure of helper earnings. */}
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mb-2">Repayment & Wage Planning</div>
       <div className="grid grid-cols-2 gap-3">
         <KpiTile
-          label="Avg Effective Rate"
+          label="Avg Pledge Repaid / Estimated Hour"
           value={data.avg_effective_hourly_rate > 0 ? `$${data.avg_effective_hourly_rate.toFixed(2)}/hr` : "—"}
-          sub={data.hourly_rate_sample_size > 0 ? `${data.hourly_rate_sample_size} completed tasks` : "no data yet"}
+          sub={data.hourly_rate_sample_size > 0 ? `${data.hourly_rate_sample_size} completed tasks; not helper earnings` : "no data yet"}
           icon={TrendingUp}
-          color={data.avg_effective_hourly_rate >= 15 ? "text-green-500" : data.avg_effective_hourly_rate > 0 ? "text-yellow-500" : "text-muted-foreground"}
+          color={data.avg_effective_hourly_rate > 0 ? "text-primary" : "text-muted-foreground"}
         />
         <KpiTile
-          label="Livable Wage Target"
+          label="Hourly Planning Reference"
           value="$15.00/hr"
-          sub="TX floor · configurable"
+          sub="Pool formula input; not a guaranteed payout"
           icon={DollarSign}
           color="text-primary"
         />

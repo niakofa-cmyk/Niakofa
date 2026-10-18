@@ -109,3 +109,4 @@
 - [Browser recording duration](media-recorder-duration.md) — live WebM may omit duration headers; derive duration server-side from packets rather than trusting client metadata.
 - [Studio theme verification](studio-theme-verification.md) — check final computed colors in both unified Studio and retained legacy audience screens, not just matching CSS declarations.
 - [Exchange browser timeout recovery](exchange-browser-timeout-recovery.md) — use deterministic UI re-entry instead of background polling and verify local fixture cleanup after interrupted runs.
+- [Community-service vision](community-service-vision.md) — preserve neighbor-to-neighbor help, flexible later contributions, and fair helper compensation as the product objective.
