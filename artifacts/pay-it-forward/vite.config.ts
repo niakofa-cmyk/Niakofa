@@ -14,14 +14,15 @@ if (rawPort && (Number.isNaN(port) || port <= 0)) {
 const basePath = process.env.BASE_PATH ?? "/";
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET?.trim() || "http://localhost:8080";
 const websocketProxyTarget = apiProxyTarget.replace(/^http/i, "ws");
-const stripePublishableKey =
-  process.env.NODE_ENV === "development"
-    ? (process.env.VITE_STRIPE_TEST_PUBLISHABLE_KEY?.startsWith("pk_test_")
-      ? process.env.VITE_STRIPE_TEST_PUBLISHABLE_KEY
-      : "")
-    : process.env.VITE_STRIPE_PUBLISHABLE_KEY ?? "";
+export default defineConfig(({ mode }) => {
+  const stripePublishableKey =
+    mode === "development"
+      ? (process.env.VITE_STRIPE_TEST_PUBLISHABLE_KEY?.startsWith("pk_test_")
+        ? process.env.VITE_STRIPE_TEST_PUBLISHABLE_KEY
+        : "")
+      : process.env.VITE_STRIPE_PUBLISHABLE_KEY ?? "";
 
-export default defineConfig({
+  return {
   base: basePath,
   plugins: [
     react(),
@@ -172,4 +173,5 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
   },
+  };
 });
