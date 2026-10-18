@@ -624,8 +624,8 @@ function PledgePoolDashboard() {
 
       <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mb-2 mt-2">Pledge Pool Health</div>
       <div className="grid grid-cols-2 gap-3">
-        <KpiTile label="Total Pledged" value={`$${data.total_pledged.toLocaleString()}`} sub="community commitments" icon={HandHeart} color="text-primary" />
-        <KpiTile label="Total Paid" value={`$${data.total_paid.toLocaleString()}`} sub="honored contributions" icon={DollarSign} color="text-green-500" />
+        <KpiTile label="Total Pledged" value={`$${data.total_pledged.toLocaleString()}`} sub="optional pledges on completed requests" icon={HandHeart} color="text-primary" />
+        <KpiTile label="Total Paid" value={`$${data.total_paid.toLocaleString()}`} sub="requester repayments received" icon={DollarSign} color="text-green-500" />
         <KpiTile label="Pending" value={`$${data.pending.toLocaleString()}`} sub="outstanding balance" icon={Clock} color="text-yellow-500" />
         <KpiTile label="Completion Rate" value={`${data.completion_rate}%`} sub="pay-it-forward ratio" icon={TrendingUp} color={data.completion_rate >= 80 ? "text-green-500" : "text-yellow-500"} />
       </div>

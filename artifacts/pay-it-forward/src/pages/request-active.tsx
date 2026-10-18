@@ -1173,7 +1173,7 @@ export default function ActiveRequestScreen() {
         )}
         {request.payment_type === "pay_it_forward" && (
           <p className="text-center text-xs text-muted-foreground mt-2">
-            💙 Pay It Forward — your help sustains the community
+            💙 Community Pool request — requester pledges are optional
           </p>
         )}
         {request.payment_type === "goodwill" && (
@@ -1278,7 +1278,7 @@ export default function ActiveRequestScreen() {
               <span className="text-xs font-black text-primary uppercase tracking-wider">Help Chain</span>
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed">
-              This is a pay-it-forward task. When {isHelper ? "you complete it" : "this task completes"}, the community pool pays the helper immediately — and {isHelper ? "the requester" : "you"} will pay it forward when able. That's how help chains grow.
+              The Community Pool pays the helper when this task completes. The requester may choose a Pay It Forward pledge, but it is not required. Any pledge follows the existing two-year repayment and trust-score lifecycle.
             </p>
             {isHelper && (
               <div className="grid grid-cols-2 gap-2 pt-1">
@@ -1298,7 +1298,7 @@ export default function ActiveRequestScreen() {
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0" />
-                  Repay whenever you're ready — no deadline pressure. Every dollar replenishes the pool for the next neighbor.
+                  You chose this pledge. Repayments are manual; the existing two-year lifecycle and trust-score rules apply.
                 </div>
                 {/* Pay What You Can quick prompts */}
                 <div className="space-y-1">

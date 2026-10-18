@@ -102,8 +102,8 @@ async function reconcilePledges(_job: Job): Promise<void> {
 
       // Push notification (non-fatal if not subscribed)
       const sent = await sendPushToUser(scheduled.user_id, {
-        title: "💙 Pay It Forward — Ready When You Are",
-        body: `Your ${amountStr} Pay It Forward contribution was scheduled for ${dateStr}. Tap to pay when you're ready — no pressure.`,
+        title: "Pay It Forward — Repayment Reminder",
+        body: `Your ${amountStr} contribution is due ${dateStr}. Pay manually from Wallet; no card is charged automatically. The existing pledge lifecycle still applies.`,
         urgency: "normal",
         requestId: request.id ?? undefined,
         notifType: "wallet" as const,
@@ -125,12 +125,12 @@ async function reconcilePledges(_job: Job): Promise<void> {
           const { sendAlertEmail } = await import("../lib/mailer.js");
           await sendAlertEmail({
             to: requester.email,
-            subject: "💙 Your Pay It Forward reminder — ready when you are",
-            title: "Pay It Forward",
+            subject: "Pay It Forward repayment reminder",
+            title: "Pay It Forward Repayment Reminder",
             body: `Hi ${requester.name ?? "neighbor"},<br><br>
 Your ${amountStr} Pay It Forward contribution for <strong>${request.title ?? "a recent request"}</strong> was scheduled for ${dateStr}.<br><br>
-When you're ready, you can pay through the Niakofa app — every contribution keeps the cycle of care going in Fort Worth.<br><br>
-<em>No pressure, no deadline. Pay it forward when it's right for you. 💙</em>`,
+Repayments are initiated manually through your Niakofa Wallet; no automatic card charge is made.<br><br>
+Your pledge follows the existing two-year repayment and trust-score lifecycle.`,
           });
           logger.info(
             { user_id: scheduled.user_id, request_id: request.id, amount: scheduled.amount },

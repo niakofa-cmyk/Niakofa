@@ -13,7 +13,7 @@ import { reportClientSideEffectFailure } from "@/lib/client-error-reporting";
  * Also renders /impact as a county picker.
  */
 import { useEffect, useState } from "react";
-import { useParams, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { Users, CheckCircle, Heart, TrendingUp, DollarSign, MapPin, ArrowLeft, ExternalLink } from "lucide-react";
 
 interface CommunityInfo {
@@ -36,6 +36,10 @@ interface ImpactData {
     total_fronted: number;
     helpers_paid: number;
     health_pct: number;
+  };
+  pledges: {
+    total_pledged: number;
+    total_paid: number;
   };
   requests: {
     total: number;
@@ -137,7 +141,7 @@ function CountyImpact({ county }: { county: string }) {
     </div>
   );
 
-  const { community, pool, requests, helpers, activity } = data;
+  const { community, pool, pledges, requests, helpers, activity } = data;
 
   return (
     <div style={{ minHeight: "100vh", background: "#0e1111", color: "#e8f4f7", fontFamily: "system-ui, sans-serif" }}>
@@ -231,12 +235,34 @@ function CountyImpact({ county }: { county: string }) {
               <div style={{ fontSize: 24, fontWeight: 700, color: "#22c55e" }}>{formatDollars(pool.balance)}</div>
             </div>
             <div>
-              <div style={{ color: "#7a9ba8", fontSize: 12, marginBottom: 4 }}>Total Contributed</div>
+              <div style={{ color: "#7a9ba8", fontSize: 12, marginBottom: 4 }}>Sponsor Contributions</div>
               <div style={{ fontSize: 24, fontWeight: 700 }}>{formatDollars(pool.total_contributed)}</div>
             </div>
             <div>
               <div style={{ color: "#7a9ba8", fontSize: 12, marginBottom: 4 }}>Paid to Helpers</div>
               <div style={{ fontSize: 24, fontWeight: 700 }}>{formatDollars(pool.total_fronted)}</div>
+            </div>
+          </div>
+          <div style={{ borderTop: "1px solid #2a3335", marginTop: 20, paddingTop: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 6px", color: "#c0d8e0" }}>
+              Optional Pay It Forward Pledges
+            </h3>
+            <p data-testid="text-pledge-metric-disclosure" style={{ fontSize: 11, color: "#4a6a77", margin: "0 0 12px" }}>
+              Only completed requests with an amount the requester chose are included.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>
+              <div>
+                <div style={{ color: "#7a9ba8", fontSize: 12, marginBottom: 4 }}>Voluntary Pledges</div>
+                <div data-testid="metric-voluntary-pledges" style={{ fontSize: 24, fontWeight: 700 }}>
+                  {formatDollars(pledges.total_pledged)}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "#7a9ba8", fontSize: 12, marginBottom: 4 }}>Pledges Repaid</div>
+                <div data-testid="metric-pledges-repaid" style={{ fontSize: 24, fontWeight: 700 }}>
+                  {formatDollars(pledges.total_paid)}
+                </div>
+              </div>
             </div>
           </div>
           <div style={{ marginTop: 20 }}>
@@ -386,8 +412,9 @@ function CountyPicker() {
 
 // ── Page entry point ──────────────────────────────────────────────────────────
 export default function CountyImpactPage() {
-  const params = useParams<{ county?: string }>();
-  const county = params.county;
+  const pathname = typeof window === "undefined" ? "" : window.location.pathname;
+  const segment = pathname.split("/").filter(Boolean)[1];
+  const county = segment ? decodeURIComponent(segment) : undefined;
   if (county) return <CountyImpact county={county} />;
   return <CountyPicker />;
 }

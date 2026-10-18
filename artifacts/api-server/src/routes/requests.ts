@@ -661,7 +661,9 @@ router.post("/requests", requireAuth, requireApproved, requestCreationLimiter, a
   // A gentle signal — not a hard block — for users who repeatedly get help
   // without ever paying forward. "Defaulted" is an internal risk signal and
   // trust-score ding; it does NOT hard-block new requests. That would
-  // contradict the mission ("2 days to 2 years, no pressure").
+  // contradict the opt-in model: Pay It Forward is optional at request creation.
+  // Once a positive pledge is made, the existing two-year lifecycle and
+  // trust-score rules still apply.
   //
   // Soft cap: max 5 unpaid pledges (active OR defaulted) before a new PIF is
   // gently declined with a clear path back (pay any amount to restore).
@@ -2236,9 +2238,9 @@ router.post("/admin/requests/:id/moderate", requireAuth, requireAdmin(), adminLi
 // defaulted pledge back to 'active', restoring the user's ability to post new
 // PIF requests without waiting for an admin action.
 //
-// Design intent: "No pressure — pay what you can, whenever you can."
-// Once a requester demonstrates intent by making a payment, they regain access.
-// The full outstanding balance remains tracked until the pledge is fully repaid.
+// Repayments are manually initiated. The existing two-year overdue and
+// trust-score lifecycle remains in effect; the full balance stays tracked
+// until the pledge is fully repaid.
 //
 // Rules:
 //   - Only the original requester can submit a repayment

@@ -1146,7 +1146,7 @@ async function processScheduledReminders(): Promise<void> {
 
     const sent = await sendPushToUser(payment.user_id, {
       title: "💙 Niakofa Reminder",
-      body: `Your $${payment.amount.toFixed(2)} contribution was scheduled for ${d}. Tap to pay when you're ready — no pressure.`,
+      body: `Reminder: your $${payment.amount.toFixed(2)} contribution is due ${d}. Pay manually from Wallet; no card is charged automatically. The existing pledge lifecycle still applies.`,
       urgency: "normal",
       requestId: payment.request_id ?? undefined,
       notifType: "wallet" as const,
@@ -1179,16 +1179,16 @@ const PIF_NUDGE_WINDOWS = [2, 14, 60] as const;
 
 function _pifNudgeCopy(days: number): { title: string; body: string } {
   if (days === 2) return {
-    title: "💙 Whenever You're Ready — Pay It Forward",
-    body: "Your neighbor helped you 2 days ago. Pay it forward whenever you're able — no deadline, no pressure.",
+    title: "Pay It Forward — 2-Day Check-In",
+    body: "You chose this pledge. Wallet repayments are manual; the existing two-year lifecycle and trust-score rules apply.",
   };
   if (days === 14) return {
-    title: "💙 Pay It Forward — 2 Weeks Later",
-    body: "Your neighbor helped you 2 weeks ago. When you're back on your feet, even a small contribution keeps the chain going for the next neighbor.",
+    title: "Pay It Forward — 2-Week Check-In",
+    body: "Your optional pledge remains active. Repayments are manual; unpaid balances follow the two-year lifecycle and may affect your trust score.",
   };
   return {
-    title: "💙 Pay It Forward — 2 Months",
-    body: "Two months ago, your neighbor helped you out. If you're ever able, a Pay It Forward contribution keeps the chain alive. No worries either way — it's all love here. 💙",
+    title: "Pay It Forward — 2-Month Check-In",
+    body: "Your Pay It Forward pledge remains active. Wallet payments are manual; the existing two-year lifecycle and trust-score rules apply.",
   };
 }
 
@@ -1259,12 +1259,9 @@ async function processPifNudges(): Promise<void> {
 //   3. Applies a trust-score penalty (-10 points, floored at 0)
 //   4. Logs the action for the admin audit trail
 //
-// Grace window is intentionally generous (730 days / 2 years) — the whole point
-// of pay-it-forward is "no pressure, pay when life gets better." A 90-day hard
-// default contradicted the mission and quietly blocked people at day 91.
-//
-// "Defaulted" is a soft internal risk signal + trust-score ding. It does NOT
-// hard-block new PIF requests — the requester can still use the platform.
+// A pledge is optional when creating a request. Once entered, the two-year
+// grace window, overdue status, trust-score penalty, and separate posting limit
+// remain in force. An overdue status alone does not block new requests.
 // Admin can restore pledge_status manually at any time.
 
 const PLEDGE_DEFAULT_DAYS = 730;
@@ -1341,7 +1338,7 @@ export async function processPledgeDefaults(): Promise<void> {
       // ever reaches this block for any given row.
       sendPushToUser(req.requester_id, {
         title: "💙 Pay It Forward — Pledge Update",
-        body: `Your pledge has been marked as overdue after ${PLEDGE_DEFAULT_DAYS / 365} years. When you're able, even a small payment keeps the cycle going for the next neighbor. No rush — we're here for you.`,
+        body: `Your chosen pledge is overdue after ${PLEDGE_DEFAULT_DAYS / 365} years. Unpaid pledges may affect your trust score and existing request limits. Repay or request hardship review in Wallet; no card is charged automatically.`,
         urgency: "normal",
         notifType: "wallet" as const,
       }).catch(err => logger.warn({ err, requester_id: req.requester_id }, "sendPushToUser (pledge-default): non-critical side effect failed — continuing"));
@@ -1363,10 +1360,10 @@ export async function processPledgeDefaults(): Promise<void> {
                   `Hi ${requester.name ?? "neighbor"},`,
                   "",
                   `Your Pay It Forward pledge has been marked as overdue after ${PLEDGE_DEFAULT_DAYS / 365} years without repayment.`,
-                  "This is a gentle signal, not a hard block — you can still use the platform.",
+                  "Unpaid pledges affect your trust score, and multiple unpaid pledges may count toward existing request limits.",
                   "",
-                  "When life gets better, make any payment — even a small one — in your Niakofa wallet to keep the cycle going for the next neighbor.",
-                  "Or submit a hardship request if you're going through a difficult time and need a waiver.",
+                  "Repayments are manual through your Niakofa Wallet; no card is charged automatically.",
+                  "You can also submit a hardship request for review.",
                 ].join("\n"),
                 ctaText: "Open My Wallet",
                 ctaUrl: `${process.env["APP_URL"] ?? "https://niakofa.com"}/wallet`,

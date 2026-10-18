@@ -565,7 +565,7 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
           {[
             ["Be honest", "Only request help you genuinely need. Be transparent about your situation."],
             ["Respect boundaries", "Never pressure helpers. Help is given freely — not owed."],
-            ["Pay it forward", "When you're able, contribute back — any amount, any time."],
+            ["Pay it forward", "Making a pledge is optional. If you choose an amount, the two-year repayment and trust-score lifecycle applies."],
             ["Stay safe", "Meet in public places when possible. Use the SOS button if anything feels wrong."],
             ["No discrimination", "Help is for everyone. We do not tolerate bias of any kind."],
           ].map(([title, desc]) => (
@@ -613,7 +613,7 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
         <div className="space-y-3 text-sm">
           {[
             ["How do I request help?", "Tap the + button on the map screen. Describe what you need and set your location. Nearby helpers will be notified."],
-            ["How does Niakofa work?", "When you receive help, you commit to paying back when you're ready — any amount, any time. No pressure, no penalties."],
+            ["How does Niakofa work?", "A Pay It Forward pledge is optional. If you choose an amount, it follows the two-year repayment and trust-score lifecycle; repayments are initiated manually."],
             ["How do I become a helper?", "Toggle Helper Mode on in the top bar of the map screen. You'll start seeing nearby requests."],
             ["Is my location always shared?", "No — only when helper mode is active or you have an open request. You control this in Account Privacy."],
             ["How do I contact support?", "Email help@niakofa.community — we respond within 24 hours."],
@@ -1615,7 +1615,7 @@ export default function ProfileScreen() {
 
             <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
               <p className="text-xs text-muted-foreground leading-relaxed text-center">
-                This isn't charity — it's neighbors helping neighbors. Help when you can. Ask when you need. Pay forward when you're able.
+                This isn't charity — it's neighbors helping neighbors. Help when you can. Ask when you need. Make a Pay It Forward pledge only if you choose to.
               </p>
             </div>
           </>

@@ -25,7 +25,7 @@ const STEPS: Step[] = [
     id: "welcome",
     icon: Heart,
     title: "Welcome to Niakofa",
-    description: "A community platform where neighbors help neighbors. Request help, offer help, and pay it forward when you're able.",
+    description: "A community platform where neighbors help neighbors. Request help, offer help, and optionally make a Pay It Forward pledge.",
     color: "text-primary",
     action: "Get Started",
   },

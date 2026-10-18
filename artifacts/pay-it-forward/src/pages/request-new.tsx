@@ -1229,6 +1229,8 @@ export default function NewRequestScreen() {
                       key={opt.type}
                       type="button"
                       onClick={() => setPaymentType(opt.type)}
+                      aria-pressed={paymentType === opt.type}
+                      data-testid={`payment-option-${opt.type}`}
                       className={`relative flex flex-col items-center text-center p-3 rounded-xl border-2 transition-all ${
                         paymentType === opt.type ? opt.color : 'border-border bg-card/50 text-muted-foreground hover:border-border/80'
                       }`}

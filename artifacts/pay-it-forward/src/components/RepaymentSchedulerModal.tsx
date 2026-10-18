@@ -280,7 +280,7 @@ export function RepaymentSchedulerModal({
       if (!res.ok) throw new Error(data.error ?? "Failed to create plan");
       toast({
         title: "Repayment plan created! 💙",
-        description: `${installmentCount} payments of $${amountPerInstallment.toFixed(2)} scheduled over ${periodOption.shortLabel}. We'll remind you — no pressure.`,
+        description: `${installmentCount} reminders for $${amountPerInstallment.toFixed(2)} payments over ${periodOption.shortLabel}. No automatic card charge; the existing two-year lifecycle and trust-score rules still apply.`,
       });
       setConfirmed(true);
       setTimeout(() => {
@@ -540,7 +540,7 @@ export function RepaymentSchedulerModal({
                       <span className="text-foreground font-bold">
                         {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
                       </span>
-                      . No pressure — you can adjust anytime.
+                      . This is a reminder only, not an automatic card charge. The existing pledge lifecycle still applies.
                     </motion.div>
                   )}
 
@@ -568,7 +568,7 @@ export function RepaymentSchedulerModal({
                   </Button>
 
                   <p className="text-[10px] text-muted-foreground text-center">
-                    Pay when you can. No penalties, no deadlines — just community. 💙
+                    Reminders do not charge your card. Your pledge remains subject to the existing two-year lifecycle and trust-score rules.
                   </p>
                 </>
               )}

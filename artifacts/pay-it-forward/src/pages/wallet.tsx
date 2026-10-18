@@ -605,7 +605,7 @@ export default function WalletScreen() {
           // pledge-worker runs daily at 9am — sends push+email reminders when payment is overdue
           toast({
             title: "Payment Scheduled",
-            description: `${amount.toFixed(2)} set aside for ${date.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. We'll remind you when it's due — no pressure.`,
+            description: `${amount.toFixed(2)} reminder set for ${date.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. This does not charge your card; the existing pledge lifecycle still applies.`,
           });
           queryClient.invalidateQueries({ queryKey: getGetScheduledPaymentsQueryKey(userId) });
         },
@@ -978,8 +978,8 @@ export default function WalletScreen() {
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-1">
                           {isDefaulted
-                            ? "Posting paused — any repayment reinstates your account immediately."
-                            : "No pressure — $2 now, $5 next week — every bit replenishes the pool."}
+                            ? "This pledge is overdue. Its existing trust-score and repayment rules still apply."
+                            : "You chose this pledge. The two-year lifecycle and trust-score rules still apply; Wallet repayments are manual."}
                         </div>
                       </div>
 
@@ -1018,7 +1018,7 @@ export default function WalletScreen() {
                       <div className="flex items-start gap-2 bg-primary/5 border border-primary/15 rounded-xl px-3 py-2">
                         <span className="text-base shrink-0 leading-none mt-0.5">💙</span>
                         <span className="text-[11px] text-primary/80 leading-relaxed italic">
-                          "Your neighbor helped — pay forward $2 when you're ready? Every bit keeps the community strong."
+                          "You chose this Pay It Forward pledge. Repayments are manual; unpaid balances follow the two-year lifecycle and may affect your trust score."
                         </span>
                       </div>
                     )}
@@ -1315,9 +1315,9 @@ export default function WalletScreen() {
           <div className="flex items-start gap-3">
             <DollarSign className="w-4 h-4 text-primary mt-0.5 shrink-0" />
             <div>
-              <div className="font-bold text-sm mb-1">Pay What You Can, When You Can</div>
+              <div className="font-bold text-sm mb-1">Pay It Forward Is Optional</div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                No deadlines. No pressure. When you're in a better position, help someone else or contribute back. That's how this community grows.
+                You can request help without making a pledge. If you choose an amount, the existing two-year repayment and trust-score lifecycle applies. Wallet repayments are manual; reminders do not charge your card.
               </p>
             </div>
           </div>
