@@ -130,7 +130,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
         pickup_location_type: "library",
         pickup_notes: "Meet by the public library entrance.",
       });
-      expect(createdListing.status).toBe(201);
+      expect(createdListing.status, JSON.stringify(createdListing.body)).toBe(201);
       listingId = createdListing.body.listing.id as number;
       const createdPickup = await api(
         buyer,
@@ -292,6 +292,190 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
              OR reported_exchange_listing_id=ANY($2::int[])`,
             [fixtureUsers, listingIds],
           );
+          await pool.query(
+            `DELETE FROM message_notifications
+             WHERE user_id=ANY($1::int[]) OR metadata->>'exchange_listing_id'=ANY($2::text[])`,
+            [fixtureUsers, listingIds.map(String)],
+          );
+          if (pickupIds.length) {
+            await pool.query("DELETE FROM exchange_pickup_requests WHERE id=ANY($1::int[])", [pickupIds]);
+          }
+          if (listingIds.length) {
+            await pool.query("DELETE FROM exchange_listings WHERE id=ANY($1::int[])", [listingIds]);
+          }
+          await pool.query("DELETE FROM users WHERE id=ANY($1::int[])", [fixtureUsers]);
+          await pool.query("COMMIT");
+        } catch (error) {
+          await pool.query("ROLLBACK");
+          throw error;
+        }
+      }
+      await pool.end();
+    }
+  });
+
+  test("focused: seller returning to background Messages refreshes Exchange pickup status", async ({ browser }) => {
+    test.skip(process.env.RUN_EXCHANGE_LOCAL_E2E !== "1", "Explicit local fixture opt-in required.");
+    requireLocalTarget();
+    test.setTimeout(90_000);
+    const pool = new Pool({ connectionString: databaseURL, max: 2 });
+    const runId = randomUUID().replace(/[0-9]/g, (digit) => String.fromCharCode(103 + Number(digit)));
+    const area = `Exchange focus ${runId.slice(0, 8)}`;
+    const title = `Focused background pickup ${runId}`;
+    const fixtureUsers: number[] = [];
+    let sellerContext: BrowserContext | null = null;
+    let listingId: number | null = null;
+    let pickupId: number | null = null;
+
+    try {
+      const createUser = async (role: "owner" | "buyer"): Promise<FixtureUser> => {
+        const name = `Focused Exchange ${role}`;
+        const email = `exchange-focus-${runId}-${role}@example.invalid`;
+        const inserted = await pool.query(
+          `INSERT INTO users(name,email,approval_status,lat,lng,neighborhood,city,is_disposable_test_account)
+           VALUES($1,$2,'approved',32.7555,-97.3308,$3,'Fort Worth, TX',true)
+           RETURNING id,token_version`,
+          [name, email, area],
+        );
+        const row = inserted.rows[0] as { id: number; token_version: number };
+        fixtureUsers.push(row.id);
+        return { id: row.id, name, email, tokenVersion: row.token_version };
+      };
+      const [seller, buyer] = await Promise.all([createUser("owner"), createUser("buyer")]);
+      const signerCode = `
+        import { tsImport } from "tsx/esm/api";
+        import { resolve } from "node:path";
+        import { pathToFileURL } from "node:url";
+        let raw = "";
+        for await (const chunk of process.stdin) raw += chunk;
+        const auth = await tsImport("../artifacts/api-server/src/middlewares/auth.ts",
+          pathToFileURL(resolve(process.cwd(), "e2e/exchange-local-lifecycle.spec.ts")).href);
+        process.stdout.write(JSON.stringify(JSON.parse(raw).map((user) => ({
+          id: user.id, token: auth.signTokenById(user.id, user.tokenVersion),
+        }))));
+      `;
+      const signed = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", signerCode], {
+        cwd: workspaceRoot,
+        env: { ...process.env, SESSION_SECRET: sessionSecret },
+        input: JSON.stringify([seller, buyer]),
+        encoding: "utf8",
+      })) as Array<{ id: number; token: string }>;
+      for (const user of [seller, buyer]) {
+        user.token = signed.find((entry) => entry.id === user.id)?.token;
+        if (!user.token) throw new Error("Local auth signer did not return a fixture token.");
+      }
+
+      const api = async (user: FixtureUser, path: string, body: unknown) => {
+        const response = await fetch(`${baseURL}/api${path}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${user.token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        return { status: response.status, body: await response.json().catch(() => null) };
+      };
+
+      const createdListing = await api(seller, "/community/exchange/listings", {
+        listing_type: "offer",
+        resource_type: "goods",
+        title,
+        description: "A local fixture for checking Messages focus refresh.",
+        category: "household",
+        condition: "good",
+        neighborhood: area,
+        pickup_location_type: "library",
+        pickup_notes: "Meet by the public library entrance.",
+      });
+      expect(createdListing.status, JSON.stringify(createdListing.body)).toBe(201);
+      listingId = Number(createdListing.body.listing.id);
+      const createdPickup = await api(
+        buyer,
+        `/community/exchange/listings/${listingId}/pickup-requests`,
+        {
+          note: "I can use this for a neighborhood group.",
+          pickup_area: `${area} public library`,
+          pickup_location_type: "library",
+          pickup_note: "Meet near the public entrance.",
+          proposed_window: "Saturday afternoon",
+        },
+      );
+      expect(createdPickup.status).toBe(201);
+      pickupId = Number(createdPickup.body.pickup_request.id);
+
+      const accepted = await api(seller, `/community/exchange/pickup-requests/${pickupId}/accept`, {});
+      expect(accepted.status).toBe(200);
+      const acceptedRow = await pool.query(
+        "SELECT status FROM exchange_pickup_requests WHERE id=$1",
+        [pickupId],
+      );
+      expect(acceptedRow.rows[0].status).toBe("accepted");
+
+      sellerContext = await browser.newContext({ storageState: emptyState, viewport: { width: 1280, height: 900 } });
+      await sellerContext.addInitScript(({ token, id, name, email }) => {
+        localStorage.setItem("niakofa_token", token);
+        localStorage.setItem("niakofa_user", JSON.stringify({
+          id, name, email, approval_status: "approved", helper_mode_active: false,
+        }));
+      }, { token: seller.token, id: seller.id, name: seller.name, email: seller.email });
+      const sellerPage = await sellerContext.newPage();
+      await sellerPage.goto(
+        `${baseURL}/messages?mode=direct&recipientId=${buyer.id}&exchangeListingId=${listingId}&exchangePickupRequestId=${pickupId}`,
+      );
+      const infoButton = sellerPage.getByRole("button", { name: "Conversation info" });
+      await expect(infoButton).toBeVisible();
+      await infoButton.click();
+      const pickupStatus = sellerPage.getByTestId("exchange-pickup-status");
+      await expect(pickupStatus).toHaveText("accepted");
+      const messagesUrl = sellerPage.url();
+
+      // Use a second tab in the same browser context to create a real hidden/
+      // visible lifecycle transition without unmounting the Messages panel.
+      const awayPage = await sellerContext.newPage();
+      await awayPage.goto("about:blank");
+      await awayPage.bringToFront();
+      await expect.poll(() => sellerPage.evaluate(() => document.visibilityState)).toBe("hidden");
+
+      const dispute = await api(buyer, `/community/exchange/pickup-requests/${pickupId}/dispute`, {
+        reason: "The agreed public pickup location is no longer available.",
+      });
+      expect(dispute.status).toBe(201);
+      const disputedRow = await pool.query(
+        "SELECT status FROM exchange_pickup_requests WHERE id=$1",
+        [pickupId],
+      );
+      expect(disputedRow.rows[0].status).toBe("disputed");
+
+      await sellerPage.bringToFront();
+      await expect.poll(() => sellerPage.evaluate(() => document.visibilityState)).toBe("visible");
+      await expect(pickupStatus).toHaveText("disputed", { timeout: 8_000 });
+      expect(sellerPage.url()).toBe(messagesUrl);
+      await awayPage.close();
+    } finally {
+      await sellerContext?.close().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      if (fixtureUsers.length) {
+        await pool.query("BEGIN");
+        try {
+          const listings = await pool.query(
+            "SELECT id FROM exchange_listings WHERE seller_id=ANY($1::int[]) OR title=$2",
+            [fixtureUsers, title],
+          );
+          const listingIds = listings.rows.map((row: { id: number }) => Number(row.id));
+          const pickups = listingIds.length
+            ? await pool.query(
+              "SELECT id FROM exchange_pickup_requests WHERE listing_id=ANY($1::int[]) OR buyer_id=ANY($2::int[])",
+              [listingIds, fixtureUsers],
+            )
+            : { rows: [] as Array<{ id: number }> };
+          const pickupIds = pickups.rows.map((row: { id: number }) => Number(row.id));
+          if (pickupIds.length) {
+            await pool.query(
+              "DELETE FROM exchange_pickup_disputes WHERE pickup_request_id=ANY($1::int[])",
+              [pickupIds],
+            );
+          }
           await pool.query(
             `DELETE FROM message_notifications
              WHERE user_id=ANY($1::int[]) OR metadata->>'exchange_listing_id'=ANY($2::text[])`,
