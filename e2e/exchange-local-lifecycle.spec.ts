@@ -130,7 +130,7 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
         pickup_location_type: "library",
         pickup_notes: "Meet by the public library entrance.",
       });
-      expect(createdListing.status, JSON.stringify(createdListing.body)).toBe(201);
+      expect(createdListing.status).toBe(201);
       listingId = createdListing.body.listing.id as number;
       const createdPickup = await api(
         buyer,
@@ -314,14 +314,14 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
     }
   });
 
-  test("focused: seller returning to background Messages refreshes Exchange pickup status", async ({ browser }) => {
+  test("focused: seller returning to Messages refreshes Exchange pickup status without navigation", async ({ browser }) => {
     test.skip(process.env.RUN_EXCHANGE_LOCAL_E2E !== "1", "Explicit local fixture opt-in required.");
     requireLocalTarget();
     test.setTimeout(90_000);
     const pool = new Pool({ connectionString: databaseURL, max: 2 });
     const runId = randomUUID().replace(/[0-9]/g, (digit) => String.fromCharCode(103 + Number(digit)));
     const area = `Exchange focus ${runId.slice(0, 8)}`;
-    const title = `Focused background pickup ${runId}`;
+    const title = `Focused return pickup ${runId}`;
     const fixtureUsers: number[] = [];
     let sellerContext: BrowserContext | null = null;
     let listingId: number | null = null;
@@ -430,12 +430,16 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       await expect(pickupStatus).toHaveText("accepted");
       const messagesUrl = sellerPage.url();
 
-      // Use a second tab in the same browser context to create a real hidden/
-      // visible lifecycle transition without unmounting the Messages panel.
-      const awayPage = await sellerContext.newPage();
-      await awayPage.goto("about:blank");
-      await awayPage.bringToFront();
-      await expect.poll(() => sellerPage.evaluate(() => document.visibilityState)).toBe("hidden");
+      // Model the browser's background/return lifecycle on this still-mounted
+      // Messages page. Playwright's headless pages do not reliably switch
+      // document visibility when another page is brought forward.
+      const setVisibility = async (state: DocumentVisibilityState) => {
+        await sellerPage.evaluate((visibility) => {
+          Object.defineProperty(document, "visibilityState", { configurable: true, value: visibility });
+          document.dispatchEvent(new Event("visibilitychange"));
+        }, state);
+      };
+      await setVisibility("hidden");
 
       const dispute = await api(buyer, `/community/exchange/pickup-requests/${pickupId}/dispute`, {
         reason: "The agreed public pickup location is no longer available.",
@@ -447,11 +451,9 @@ test.describe("local Exchange UI → API → database pickup lifecycle", () => {
       );
       expect(disputedRow.rows[0].status).toBe("disputed");
 
-      await sellerPage.bringToFront();
-      await expect.poll(() => sellerPage.evaluate(() => document.visibilityState)).toBe("visible");
+      await setVisibility("visible");
       await expect(pickupStatus).toHaveText("disputed", { timeout: 8_000 });
       expect(sellerPage.url()).toBe(messagesUrl);
-      await awayPage.close();
     } finally {
       await sellerContext?.close().catch(() => undefined);
       await new Promise((resolve) => setTimeout(resolve, 300));
