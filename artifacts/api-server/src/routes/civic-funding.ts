@@ -27,6 +27,7 @@ type ApprovedSponsor = {
   entity_name: string;
   county: string;
   state: string;
+  city: string | null;
 };
 
 function toCents(value: unknown): number | null {
@@ -55,6 +56,7 @@ async function approvedSponsorForUser(userId: number): Promise<ApprovedSponsor |
       entity_name: governmentSponsorsTable.entity_name,
       county: governmentSponsorsTable.county,
       state: governmentSponsorsTable.state,
+      city: governmentSponsorsTable.city,
     })
     .from(governmentSponsorsTable)
     .where(and(
@@ -191,12 +193,14 @@ router.post("/civic/funding/budgets", requireAuth, generalApiLimiter, async (req
     authorized_amount?: unknown;
   };
   const name = typeof body.name === "string" ? body.name.trim() : "";
-  const fiscalYear = typeof body.fiscal_year === "string" ? body.fiscal_year.trim() : "";
+  const fiscalYearInput = typeof body.fiscal_year === "string" ? body.fiscal_year.trim() : "";
   const reference = typeof body.appropriation_reference === "string" ? body.appropriation_reference.trim() : "";
   const cents = toCents(body.authorized_amount);
 
   if (!name || name.length > 120) return res.status(400).json({ error: "Budget name is required and must be 120 characters or fewer." });
-  if (!/^\d{4}(?:-\d{2})?$/.test(fiscalYear)) return res.status(400).json({ error: "Fiscal year must be a year such as 2026 or 2026-27." });
+  const fiscalYearMatch = fiscalYearInput.match(/^(?:FY\s*)?(\d{4}(?:-\d{2})?)$/i);
+  if (!fiscalYearMatch) return res.status(400).json({ error: "Fiscal year must be a year such as 2026 or FY 2026-27." });
+  const fiscalYear = `FY ${fiscalYearMatch[1]}`;
   if (!reference || reference.length > 120) return res.status(400).json({ error: "Appropriation reference is required and must be 120 characters or fewer." });
   if (cents == null) return res.status(400).json({ error: "Authorized amount must be a positive amount with no more than two decimal places (up to $100,000,000)." });
 
@@ -266,6 +270,7 @@ router.post("/civic/funding/allocations", requireAuth, generalApiLimiter, async 
       requester_id: requestsTable.requester_id,
       title: requestsTable.title,
       category: requestsTable.category,
+      urgency: requestsTable.urgency,
     })
     .from(requestsTable)
     .where(eq(requestsTable.id, requestId))
@@ -276,13 +281,20 @@ router.post("/civic/funding/allocations", requireAuth, generalApiLimiter, async 
   }
 
   const [requester] = await db
-    .select({ county: communitiesTable.county, state: communitiesTable.state })
+    .select({ county: communitiesTable.county, state: communitiesTable.state, city: usersTable.city })
     .from(usersTable)
     .innerJoin(communitiesTable, eq(usersTable.community_id, communitiesTable.id))
     .where(eq(usersTable.id, target.requester_id))
     .limit(1);
   const normalize = (value: string) => value.trim().replace(/\s+County$/i, "").toLocaleLowerCase();
-  if (!requester || normalize(requester.county) !== normalize(sponsor.county) || requester.state.trim().toUpperCase() !== sponsor.state.trim().toUpperCase()) {
+  if (
+    !requester
+    || !requester.county
+    || !requester.state
+    || normalize(requester.county) !== normalize(sponsor.county)
+    || requester.state.trim().toUpperCase() !== sponsor.state.trim().toUpperCase()
+    || (sponsor.city != null && requester.city?.trim().toLocaleLowerCase() !== sponsor.city.trim().toLocaleLowerCase())
+  ) {
     return res.status(404).json({ error: "Community request not found in your approved jurisdiction." });
   }
 
@@ -303,8 +315,25 @@ router.post("/civic/funding/allocations", requireAuth, generalApiLimiter, async 
         ))
         .for("update")
         .limit(1);
-      if (!budget) return { error: "Budget not found.", status: 404 as const };
-      if (budget.status !== "active") return { error: "This budget is closed.", status: 409 as const };
+      if (!budget) return { ok: false as const, error: "Budget not found.", status: 404 as const };
+      if (budget.status !== "active") return { ok: false as const, error: "This budget is closed.", status: 409 as const };
+
+      const [lockedRequest] = await tx
+        .select({
+          id: requestsTable.id,
+          title: requestsTable.title,
+          category: requestsTable.category,
+          urgency: requestsTable.urgency,
+          status: requestsTable.status,
+        })
+        .from(requestsTable)
+        .where(eq(requestsTable.id, requestId))
+        .for("update")
+        .limit(1);
+      if (!lockedRequest) return { ok: false as const, error: "Community request not found.", status: 404 as const };
+      if (lockedRequest.status !== "open" && lockedRequest.status !== "claimed") {
+        return { ok: false as const, error: "Only open or claimed community requests can receive a new public funding approval.", status: 409 as const };
+      }
 
       const [committedRow] = await tx
         .select({
@@ -317,7 +346,7 @@ router.post("/civic/funding/allocations", requireAuth, generalApiLimiter, async 
         ));
       const remaining = asCents(budget.authorized_amount) - Number(committedRow?.cents ?? 0);
       if (cents > remaining) {
-        return { error: `Allocation exceeds the available authorization of $${dollars(Math.max(remaining, 0))}.`, status: 409 as const };
+        return { ok: false as const, error: `Allocation exceeds the available authorization of $${dollars(Math.max(remaining, 0))}.`, status: 409 as const };
       }
 
       const [created] = await tx
@@ -325,26 +354,27 @@ router.post("/civic/funding/allocations", requireAuth, generalApiLimiter, async 
         .values({
           government_sponsor_id: sponsor.id,
           budget_id: budget.id,
-          request_id: target.id,
+          request_id: lockedRequest.id,
           amount: dollars(cents),
           notes: notes || null,
           approved_by_user_id: userId,
         })
         .returning();
       return {
+        ok: true as const,
         allocation: {
           ...created,
           budget_name: budget.name,
           fiscal_year: budget.fiscal_year,
-          request_title: target.title,
-          request_category: target.category,
-          request_urgency: "",
-          request_status: target.status,
+          request_title: lockedRequest.title,
+          request_category: lockedRequest.category,
+          request_urgency: lockedRequest.urgency,
+          request_status: lockedRequest.status,
           amount: dollars(cents),
         },
       };
     });
-    if ("error" in allocation) return res.status(allocation.status).json({ error: allocation.error });
+    if (!allocation.ok) return res.status(allocation.status).json({ error: allocation.error });
 
     logger.info({
       sponsor_id: sponsor.id,

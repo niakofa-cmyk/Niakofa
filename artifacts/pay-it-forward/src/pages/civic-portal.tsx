@@ -465,7 +465,7 @@ export default function CivicPortalPage() {
         <p className="text-sm text-muted-foreground text-center">
           Sign in to access the Civic Partner Portal.
         </p>
-        <Button onClick={() => setLocation("/")}>Sign In</Button>
+        <Button data-testid="button-civic-sign-in" onClick={() => setLocation("/login")}>Sign In</Button>
       </div>
     );
   }
@@ -601,7 +601,7 @@ export default function CivicPortalPage() {
                 </div>
                 <h2 id="funding-workspace-title" className="text-2xl font-semibold tracking-tight">Budget authorization &amp; commitments</h2>
                 <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-300">
-                  Record approved funding capacity and reserve amounts against eligible open county requests.
+                  Record public budget authorizations and reserve amounts against eligible requests in your city or county.
                 </p>
               </div>
               <Button
@@ -751,7 +751,7 @@ export default function CivicPortalPage() {
                         </select>
                       </label>
                       <label className="block space-y-1.5 text-xs font-semibold">
-                        Open county request
+                        Open request in your jurisdiction
                         <select data-testid="select-allocation-request" value={allocationForm.request_id} onChange={e => setAllocationForm(v => ({ ...v, request_id: e.target.value }))} required className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm font-normal">
                           <option value="">Select open request</option>
                           {fundingRequests.map(request => <option key={request.id} value={request.id}>#{request.id} · {request.title}</option>)}
@@ -768,7 +768,7 @@ export default function CivicPortalPage() {
                       <Button data-testid="button-submit-allocation" type="submit" className="w-full" disabled={allocationSubmitting || !budgets.some(b => b.status === "active") || fundingRequests.length === 0}>
                         {allocationSubmitting ? "Recording commitment…" : "Record approved commitment"}
                       </Button>
-                      {fundingRequests.length === 0 && <p data-testid="state-open-requests-empty" className="text-xs text-muted-foreground">There are no open county requests available to commit against.</p>}
+                      {fundingRequests.length === 0 && <p data-testid="state-open-requests-empty" className="text-xs text-muted-foreground">There are no open requests in your jurisdiction available to commit against.</p>}
                     </form>
                   </div>
                 </div>

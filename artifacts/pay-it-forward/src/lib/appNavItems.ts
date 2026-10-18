@@ -35,6 +35,9 @@ export function getAppNavItems(opts: { openNotifications: () => void }): AppNavI
       isActive: (l) => l.startsWith("/community") && l.includes("tab=resources") },
     { key: "civic", label: "Civic Engagement", icon: Landmark, href: "/civic-needs",
       isActive: (l) => l.startsWith("/civic-needs") || l.startsWith("/civic-portal") },
+    { key: "civic-partners", label: "Civic Partner Portal", icon: Landmark,
+      href: "/civic-portal", testId: "link-civic-partner-portal",
+      isActive: (l) => l.startsWith("/civic-portal") },
     { key: "diaspora", label: "Diaspora", icon: Globe2, href: "/diaspora",
       // Keep the diaspora navigation active for its timeline and family routes.
       isActive: (l) =>

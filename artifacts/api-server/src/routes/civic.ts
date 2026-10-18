@@ -774,6 +774,7 @@ router.get("/civic/portal/open-requests", requireAuth, generalApiLimiter, async 
       entity_name: governmentSponsorsTable.entity_name,
       county: governmentSponsorsTable.county,
       state: governmentSponsorsTable.state,
+      city: governmentSponsorsTable.city,
     })
     .from(governmentSponsorsTable)
     .where(
@@ -816,7 +817,7 @@ router.get("/civic/portal/open-requests", requireAuth, generalApiLimiter, async 
   if (matchingCommunities.length === 0) {
     return res.json({
       requests: [],
-      sponsor: { entity_name: sponsor.entity_name, county: sponsor.county, state: sponsor.state },
+      sponsor: { entity_name: sponsor.entity_name, county: sponsor.county, state: sponsor.state, city: sponsor.city },
       scope_note: `No communities linked to ${sponsor.county} county yet. Contact the Niakofa team to associate your county with a community pool.`,
       limit,
       offset,
@@ -842,6 +843,17 @@ router.get("/civic/portal/open-requests", requireAuth, generalApiLimiter, async 
       WHERE community_id = ANY(ARRAY[${communityIdPlaceholders}]::int[])
     )`,
   ];
+  if (sponsor.city) {
+    // City sponsors see only requests whose requester profile resolves to their
+    // exact municipality; county-level sponsors retain county-wide visibility.
+    baseConditions.push(sql`
+      ${requestsTable.requester_id} IN (
+        SELECT id FROM users
+        WHERE community_id = ANY(ARRAY[${communityIdPlaceholders}]::int[])
+          AND LOWER(TRIM(COALESCE(city, ''))) = LOWER(TRIM(${sponsor.city}))
+      )
+    `);
+  }
   if (urgencyFilter) baseConditions.push(eq(requestsTable.urgency, urgencyFilter));
   if (categoryFilter) baseConditions.push(eq(requestsTable.category, categoryFilter));
 
@@ -885,7 +897,7 @@ router.get("/civic/portal/open-requests", requireAuth, generalApiLimiter, async 
 
   return res.json({
     requests: fuzzed,
-    sponsor: { entity_name: sponsor.entity_name, county: sponsor.county, state: sponsor.state },
+    sponsor: { entity_name: sponsor.entity_name, county: sponsor.county, state: sponsor.state, city: sponsor.city },
     limit,
     offset,
   });
