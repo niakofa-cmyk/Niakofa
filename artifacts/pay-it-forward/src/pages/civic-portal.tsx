@@ -20,6 +20,7 @@ import {
   Landmark, ChevronLeft, Plus, Clock, CheckCircle2,
   AlertCircle, MapPin, ClipboardList, Send, RefreshCw,
   Layers, BarChart2, ExternalLink, Trash2, ChevronDown,
+  Banknote, ShieldCheck, FilePlus2, CircleDollarSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,58 @@ interface CivicRequest {
   completed_at: string | null;
 }
 
+interface Budget {
+  id: number;
+  name: string;
+  fiscal_year: string;
+  appropriation_reference: string;
+  authorized_amount: string;
+  status: "active" | "closed";
+  created_at: string;
+  committed_amount: string;
+  available_amount: string;
+}
+
+interface Allocation {
+  id: number;
+  budget_id: number;
+  budget_name: string;
+  fiscal_year: string;
+  request_id: number;
+  request_title: string;
+  request_category: string;
+  request_urgency: string;
+  request_status: string;
+  amount: string;
+  status: "approved";
+  notes: string | null;
+  created_at: string;
+}
+
+interface FundingReport {
+  summary: {
+    authorized_amount: string;
+    committed_amount: string;
+    available_amount: string;
+    completed_service_value: string;
+  };
+  allocations: Allocation[];
+}
+
+interface OpenFundingRequest {
+  id: number;
+  title: string;
+  description: string | null;
+  category: string;
+  urgency: string;
+  payment_type: string;
+  neighborhood: string | null;
+  estimated_hours: number | null;
+  created_at: string;
+  lat: number | null;
+  lng: number | null;
+}
+
 const CATEGORIES = [
   "Food & Groceries", "Transportation", "Home Repair", "Medical",
   "Childcare", "Tech Help", "Errands", "Emergency", "Other",
@@ -79,6 +132,15 @@ const STATUS_COLOR: Record<string, string> = {
 
 function statusLabel(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function formatMoney(value: string | number | null | undefined) {
+  const amount = Number(value ?? 0);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(amount) ? amount : 0);
 }
 
 const BLANK_FORM = {
@@ -119,6 +181,20 @@ export default function CivicPortalPage() {
   } | null>(null);
 
   const [form, setForm] = useState({ ...BLANK_FORM });
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [report, setReport] = useState<FundingReport | null>(null);
+  const [fundingRequests, setFundingRequests] = useState<OpenFundingRequest[]>([]);
+  const [fundingLoading, setFundingLoading] = useState(true);
+  const [fundingError, setFundingError] = useState("");
+  const [budgetFormOpen, setBudgetFormOpen] = useState(false);
+  const [budgetSubmitting, setBudgetSubmitting] = useState(false);
+  const [budgetForm, setBudgetForm] = useState({
+    name: "", fiscal_year: "", appropriation_reference: "", authorized_amount: "",
+  });
+  const [allocationForm, setAllocationForm] = useState({
+    budget_id: "", request_id: "", amount: "", notes: "",
+  });
+  const [allocationSubmitting, setAllocationSubmitting] = useState(false);
 
   // Load the user's approved gov-sponsor record
   useEffect(() => {
@@ -149,6 +225,134 @@ export default function CivicPortalPage() {
   }, [sponsor, setRequests]);
 
   useEffect(() => { loadRequests(); }, [loadRequests]);
+
+  const loadFunding = useCallback(async () => {
+    if (!sponsor || sponsor.approval_status !== "approved") return;
+    setFundingLoading(true);
+    setFundingError("");
+    try {
+      const [budgetRes, reportRes, requestsRes] = await Promise.all([
+        fetch(`${BASE}/api/civic/funding/budgets`, { headers: authHeaders() }),
+        fetch(`${BASE}/api/civic/funding/report`, { headers: authHeaders() }),
+        fetch(`${BASE}/api/civic/portal/open-requests`, { headers: authHeaders() }),
+      ]);
+      if (!budgetRes.ok || !reportRes.ok || !requestsRes.ok) {
+        throw new Error("Funding data could not be loaded. Please try again.");
+      }
+      const [budgetData, reportData, requestData] = await Promise.all([
+        budgetRes.json() as Promise<Budget[]>,
+        reportRes.json() as Promise<FundingReport>,
+        requestsRes.json() as Promise<{ requests: OpenFundingRequest[] }>,
+      ]);
+      setBudgets(budgetData);
+      setReport(reportData);
+      setFundingRequests(requestData.requests ?? []);
+      setAllocationForm(current => ({
+        ...current,
+        budget_id: current.budget_id || String(budgetData.find(b => b.status === "active")?.id ?? ""),
+        request_id: current.request_id || String(requestData.requests?.[0]?.id ?? ""),
+      }));
+    } catch (error) {
+      setFundingError(error instanceof Error ? error.message : "Funding data could not be loaded.");
+    } finally {
+      setFundingLoading(false);
+    }
+  }, [sponsor]);
+
+  useEffect(() => { void loadFunding(); }, [loadFunding]);
+
+  const submitBudget = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number(budgetForm.authorized_amount);
+    if (!budgetForm.name.trim() || !budgetForm.fiscal_year.trim() ||
+      !budgetForm.appropriation_reference.trim() || !Number.isFinite(amount) || amount <= 0) {
+      toast({ title: "Complete all budget authorization fields", variant: "destructive" });
+      return;
+    }
+    setBudgetSubmitting(true);
+    try {
+      const response = await fetch(`${BASE}/api/civic/funding/budgets`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          name: budgetForm.name.trim(),
+          fiscal_year: budgetForm.fiscal_year.trim(),
+          appropriation_reference: budgetForm.appropriation_reference.trim(),
+          authorized_amount: amount,
+        }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Could not create budget authorization.");
+      }
+      setBudgetForm({ name: "", fiscal_year: "", appropriation_reference: "", authorized_amount: "" });
+      setBudgetFormOpen(false);
+      toast({ title: "Budget authorization recorded" });
+      await loadFunding();
+    } catch (error) {
+      toast({ title: "Authorization not recorded", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
+    } finally {
+      setBudgetSubmitting(false);
+    }
+  };
+
+  const closeBudget = async (budget: Budget) => {
+    if (!window.confirm(`Close “${budget.name}”? Existing commitments remain recorded.`)) return;
+    try {
+      const response = await fetch(`${BASE}/api/civic/funding/budgets/${budget.id}/close`, {
+        method: "PATCH",
+        headers: authHeaders(),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Could not close budget.");
+      }
+      toast({ title: "Budget closed", description: `${budget.name} is no longer available for new commitments.` });
+      await loadFunding();
+    } catch (error) {
+      toast({ title: "Budget not closed", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
+    }
+  };
+
+  const submitAllocation = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number(allocationForm.amount);
+    const budgetId = Number(allocationForm.budget_id);
+    const requestId = Number(allocationForm.request_id);
+    const budget = budgets.find(item => item.id === budgetId);
+    if (!budget || budget.status !== "active" || !requestId || !Number.isFinite(amount) || amount <= 0) {
+      toast({ title: "Select an active budget and open request, then enter a valid amount", variant: "destructive" });
+      return;
+    }
+    if (amount > Number(budget.available_amount)) {
+      toast({ title: "Amount exceeds available budget authorization", variant: "destructive" });
+      return;
+    }
+    setAllocationSubmitting(true);
+    try {
+      const response = await fetch(`${BASE}/api/civic/funding/allocations`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          budget_id: budgetId,
+          request_id: requestId,
+          amount,
+          ...(allocationForm.notes.trim() ? { notes: allocationForm.notes.trim() } : {}),
+        }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Could not record commitment.");
+      }
+      setAllocationForm(current => ({ ...current, amount: "", notes: "" }));
+      toast({ title: "Commitment recorded", description: "This records a reservation only; no payment transfer occurs." });
+      await loadFunding();
+    } catch (error) {
+      toast({ title: "Commitment not recorded", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
+    } finally {
+      setAllocationSubmitting(false);
+    }
+  };
 
   // Load County Kindness Index from public impact endpoint
   useEffect(() => {
@@ -386,6 +590,223 @@ export default function CivicPortalPage() {
             <ExternalLink className="w-3.5 h-3.5" /> Public View
           </a>
         </div>
+
+        {/* Municipal funding authorization and request-reservation workspace */}
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-card shadow-sm" aria-labelledby="funding-workspace-title">
+          <div className="bg-[#10263c] px-4 py-5 text-white sm:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-200">
+                  <ShieldCheck className="h-4 w-4" /> Municipal partnership
+                </div>
+                <h2 id="funding-workspace-title" className="text-2xl font-semibold tracking-tight">Budget authorization &amp; commitments</h2>
+                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-300">
+                  Record approved funding capacity and reserve amounts against eligible open county requests.
+                </p>
+              </div>
+              <Button
+                data-testid="button-new-budget-authorization"
+                variant="outline"
+                className="shrink-0 border-cyan-200/40 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                onClick={() => setBudgetFormOpen(value => !value)}
+              >
+                <FilePlus2 className="mr-2 h-4 w-4" />
+                {budgetFormOpen ? "Close form" : "New authorization"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-5 p-4 sm:p-6">
+            <div className="flex items-start gap-3 rounded-xl border border-amber-300/70 bg-amber-50 px-3.5 py-3 text-amber-950">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+              <p data-testid="notice-funding-disclaimer" className="text-xs leading-relaxed">
+                Authorized and committed amounts are not evidence of cash receipt or disbursement. A completed request means service was completed; it is not proof it was paid.
+              </p>
+            </div>
+
+            {budgetFormOpen && (
+              <form onSubmit={submitBudget} className="rounded-xl border border-cyan-200 bg-cyan-50/50 p-4 sm:p-5">
+                <div className="mb-4">
+                  <h3 className="text-sm font-bold">Record a budget authorization</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Enter the official appropriation reference. This creates an authorization record, not a payment.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1.5 text-xs font-semibold">
+                    Budget name
+                    <Input data-testid="input-budget-name" value={budgetForm.name} onChange={e => setBudgetForm(v => ({ ...v, name: e.target.value }))} maxLength={120} required placeholder="e.g. Resident essentials" />
+                  </label>
+                  <label className="space-y-1.5 text-xs font-semibold">
+                    Fiscal year
+                    <Input data-testid="input-budget-fiscal-year" value={budgetForm.fiscal_year} onChange={e => setBudgetForm(v => ({ ...v, fiscal_year: e.target.value }))} maxLength={20} required placeholder="e.g. FY 2026" />
+                  </label>
+                  <label className="space-y-1.5 text-xs font-semibold">
+                    Appropriation reference
+                    <Input data-testid="input-budget-appropriation-reference" value={budgetForm.appropriation_reference} onChange={e => setBudgetForm(v => ({ ...v, appropriation_reference: e.target.value }))} maxLength={100} required placeholder="Resolution, line item, or ordinance" />
+                  </label>
+                  <label className="space-y-1.5 text-xs font-semibold">
+                    Authorized amount (USD)
+                    <Input data-testid="input-budget-authorized-amount" type="number" min="0.01" step="0.01" value={budgetForm.authorized_amount} onChange={e => setBudgetForm(v => ({ ...v, authorized_amount: e.target.value }))} required placeholder="0.00" />
+                  </label>
+                </div>
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <Button data-testid="button-cancel-budget-authorization" type="button" variant="outline" onClick={() => setBudgetFormOpen(false)}>Cancel</Button>
+                  <Button data-testid="button-submit-budget-authorization" type="submit" disabled={budgetSubmitting}>
+                    {budgetSubmitting ? "Saving authorization…" : "Record authorization"}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {fundingLoading && !report ? (
+              <div data-testid="state-funding-loading" className="space-y-3" aria-label="Loading funding records">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[1, 2, 3, 4].map(item => <div key={item} className="h-20 animate-pulse rounded-xl bg-muted" />)}</div>
+                <div className="h-28 animate-pulse rounded-xl bg-muted" />
+              </div>
+            ) : fundingError ? (
+              <div data-testid="state-funding-error" role="alert" className="flex flex-col items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold">Funding records unavailable</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{fundingError}</p>
+                </div>
+                <Button data-testid="button-retry-funding" size="sm" variant="outline" onClick={() => void loadFunding()}>
+                  <RefreshCw className="mr-2 h-3.5 w-3.5" /> Retry
+                </Button>
+              </div>
+            ) : (
+              <>
+                {report && (
+                  <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+                    {[
+                      { label: "Budget authorization", value: report.summary.authorized_amount, tone: "text-slate-900" },
+                      { label: "Committed amount", value: report.summary.committed_amount, tone: "text-amber-800" },
+                      { label: "Available authorization", value: report.summary.available_amount, tone: "text-emerald-800" },
+                      { label: "Completed service value", value: report.summary.completed_service_value, tone: "text-cyan-900" },
+                    ].map(metric => (
+                      <div key={metric.label} className="rounded-xl border border-border bg-background p-3.5">
+                        <p className="text-[10px] font-bold uppercase leading-snug tracking-wider text-muted-foreground">{metric.label}</p>
+                        <p data-testid={`metric-${metric.label.toLowerCase().replaceAll(" ", "-")}`} className={`mt-2 font-mono text-lg font-bold tracking-tight ${metric.tone}`}>
+                          {formatMoney(metric.value)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+                  <div className="space-y-3">
+                    <div className="flex items-end justify-between gap-3">
+                      <div>
+                        <h3 className="flex items-center gap-2 text-sm font-bold"><Banknote className="h-4 w-4 text-primary" /> Budget authorizations</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">Balances shown are authorization less recorded commitments.</p>
+                      </div>
+                      <Button data-testid="button-refresh-funding" size="sm" variant="ghost" onClick={() => void loadFunding()} aria-label="Refresh budget and commitment records">
+                        <RefreshCw className={`h-4 w-4 ${fundingLoading ? "animate-spin" : ""}`} />
+                      </Button>
+                    </div>
+                    {budgets.length === 0 ? (
+                      <div data-testid="state-budgets-empty" className="rounded-xl border border-dashed border-border bg-muted/25 px-4 py-6 text-center">
+                        <Banknote className="mx-auto h-7 w-7 text-muted-foreground/60" />
+                        <p className="mt-2 text-sm font-semibold">No budget authorizations yet</p>
+                        <p className="mt-1 text-xs text-muted-foreground">Record an authorization with its appropriation reference to begin.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {budgets.map(budget => (
+                          <article data-testid={`card-budget-${budget.id}`} key={budget.id} className="rounded-xl border border-border bg-background p-3.5">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h4 className="text-sm font-bold">{budget.name}</h4>
+                                  <span data-testid={`status-budget-${budget.id}`} className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${budget.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{budget.status}</span>
+                                  <span className="text-xs text-muted-foreground">{budget.fiscal_year}</span>
+                                </div>
+                                <p data-testid={`text-appropriation-${budget.id}`} className="mt-1 break-words text-[11px] text-muted-foreground">Reference: {budget.appropriation_reference}</p>
+                              </div>
+                              {budget.status === "active" && (
+                                <Button data-testid={`button-close-budget-${budget.id}`} size="sm" variant="outline" className="h-8 text-xs" onClick={() => void closeBudget(budget)}>Close budget</Button>
+                              )}
+                            </div>
+                            <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3">
+                              <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Authorized</p><p data-testid={`value-budget-authorized-${budget.id}`} className="mt-1 font-mono text-xs font-semibold">{formatMoney(budget.authorized_amount)}</p></div>
+                              <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Committed</p><p data-testid={`value-budget-committed-${budget.id}`} className="mt-1 font-mono text-xs font-semibold">{formatMoney(budget.committed_amount)}</p></div>
+                              <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Available</p><p data-testid={`value-budget-available-${budget.id}`} className="mt-1 font-mono text-xs font-semibold text-emerald-800">{formatMoney(budget.available_amount)}</p></div>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <h3 className="flex items-center gap-2 text-sm font-bold"><CircleDollarSign className="h-4 w-4 text-primary" /> Record a commitment</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Reservation against an open request. No cash transfer occurs here.</p>
+                    </div>
+                    <form onSubmit={submitAllocation} className="space-y-3 rounded-xl border border-border bg-muted/20 p-3.5">
+                      <label className="block space-y-1.5 text-xs font-semibold">
+                        Active budget
+                        <select data-testid="select-allocation-budget" value={allocationForm.budget_id} onChange={e => setAllocationForm(v => ({ ...v, budget_id: e.target.value }))} required className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm font-normal">
+                          <option value="">Select budget</option>
+                          {budgets.filter(budget => budget.status === "active").map(budget => <option key={budget.id} value={budget.id}>{budget.name} · {budget.fiscal_year} · {formatMoney(budget.available_amount)} available</option>)}
+                        </select>
+                      </label>
+                      <label className="block space-y-1.5 text-xs font-semibold">
+                        Open county request
+                        <select data-testid="select-allocation-request" value={allocationForm.request_id} onChange={e => setAllocationForm(v => ({ ...v, request_id: e.target.value }))} required className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm font-normal">
+                          <option value="">Select open request</option>
+                          {fundingRequests.map(request => <option key={request.id} value={request.id}>#{request.id} · {request.title}</option>)}
+                        </select>
+                      </label>
+                      <label className="block space-y-1.5 text-xs font-semibold">
+                        Commitment amount (USD)
+                        <Input data-testid="input-allocation-amount" type="number" min="0.01" step="0.01" value={allocationForm.amount} onChange={e => setAllocationForm(v => ({ ...v, amount: e.target.value }))} required placeholder="0.00" />
+                      </label>
+                      <label className="block space-y-1.5 text-xs font-semibold">
+                        Notes <span className="font-normal text-muted-foreground">optional</span>
+                        <textarea data-testid="input-allocation-notes" value={allocationForm.notes} onChange={e => setAllocationForm(v => ({ ...v, notes: e.target.value }))} rows={2} maxLength={500} placeholder="Purpose or internal reference" className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm font-normal" />
+                      </label>
+                      <Button data-testid="button-submit-allocation" type="submit" className="w-full" disabled={allocationSubmitting || !budgets.some(b => b.status === "active") || fundingRequests.length === 0}>
+                        {allocationSubmitting ? "Recording commitment…" : "Record approved commitment"}
+                      </Button>
+                      {fundingRequests.length === 0 && <p data-testid="state-open-requests-empty" className="text-xs text-muted-foreground">There are no open county requests available to commit against.</p>}
+                    </form>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="mb-3 flex items-end justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold">Commitment register</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Approved reservations grouped by their linked request.</p>
+                    </div>
+                    <span className="font-mono text-xs text-muted-foreground">{report?.allocations.length ?? 0} records</span>
+                  </div>
+                  {!report?.allocations.length ? (
+                    <div data-testid="state-allocations-empty" className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-xs text-muted-foreground">No commitments recorded. New reservations will appear here.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {report.allocations.map(allocation => (
+                        <article data-testid={`row-allocation-${allocation.id}`} key={allocation.id} className="flex flex-col gap-2 rounded-xl border border-border bg-background px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p data-testid={`text-allocation-request-${allocation.id}`} className="truncate text-sm font-semibold">{allocation.request_title}</p>
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              {allocation.budget_name} · {allocation.fiscal_year} · {allocation.request_category} · {statusLabel(allocation.request_status)}
+                            </p>
+                            {allocation.notes && <p className="mt-1 text-xs text-muted-foreground">{allocation.notes}</p>}
+                          </div>
+                          <div className="flex items-center justify-between gap-4 sm:justify-end">
+                            <span data-testid={`status-allocation-${allocation.id}`} className="rounded-full bg-cyan-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-cyan-900">{allocation.status}</span>
+                            <span data-testid={`value-allocation-${allocation.id}`} className="font-mono text-sm font-bold">{formatMoney(allocation.amount)}</span>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </section>
 
         {/* County Kindness Index */}
         {kindnessIndex !== null && (

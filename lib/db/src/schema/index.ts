@@ -23,6 +23,7 @@ export * from "./civic-needs";
 export * from "./civic-invoices";
 export * from "./civic-suggestions";
 export * from "./government-sponsors";
+export * from "./government-funding";
 export * from "./businesses";
 export * from "./gratitude";
 export * from "./gratitude-likes";
