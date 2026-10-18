@@ -9,6 +9,7 @@ import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
 import { sendPushToUser } from "./push";
 import { distanceMiles } from "../lib/geo.js";
 import { normalizeMapboxStateCode } from "../lib/civic-geo.js";
+import { getMapboxToken } from "../lib/mapbox-config.js";
 import { GetCivicResourcesNearbyQueryParams, GetCivicNeedsNearbyQueryParams } from "@workspace/api-zod";
 
 const VALID_CIVIC_NEED_CATEGORIES = [
@@ -84,7 +85,7 @@ async function getVerifiedCallerJurisdiction(userId: number): Promise<VerifiedJu
   }
 }
 
-const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN ?? process.env.VITE_MAPBOX_TOKEN ?? "";
+const MAPBOX_TOKEN = getMapboxToken();
 
 interface MapboxFeature {
   place_type: string[];

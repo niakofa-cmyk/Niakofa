@@ -60,6 +60,17 @@ cd artifacts/pay-it-forward && pnpm exec vite --config vite.config.ts --host 0.0
 
 See `.env.railway.example` for the full reference.
 
+### Development payment safety
+
+Local development ignores shared Stripe live-mode keys. Use `STRIPE_TEST_SECRET_KEY`,
+`STRIPE_TEST_WEBHOOK_SECRET`, and `VITE_STRIPE_TEST_PUBLISHABLE_KEY` (`sk_test_`,
+`whsec_`, and `pk_test_` values) for development payment checks. Production keeps
+using `STRIPE_SECRET_KEYS` / `STRIPE_SECRET_KEY`, the matching webhook secret, and
+`VITE_STRIPE_PUBLISHABLE_KEY`.
+
+For development map requests, the API prefers `VITE_MAPBOX_TOKEN` when both
+Mapbox variables are present. Production continues to prefer `MAPBOX_TOKEN`.
+
 ---
 
 ## Stack

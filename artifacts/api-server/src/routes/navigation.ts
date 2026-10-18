@@ -3,6 +3,7 @@ import { GetRouteQueryParams } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
 import { navigationLimiter } from "../middlewares/rate-limit";
+import { getMapboxToken } from "../lib/mapbox-config.js";
 
 const router = Router();
 
@@ -225,7 +226,7 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
   // Using || (not ??) so that an empty-string value (e.g. a placeholder secret
   // the user forgot to fill in) correctly falls through to the next option
   // rather than being treated as a valid token.
-  const token = (process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN) || undefined;
+  const token = getMapboxToken() || undefined;
   if (!token) {
     logger.warn("navigation: Mapbox token not set — set MAPBOX_TOKEN or VITE_MAPBOX_TOKEN");
     return res.status(503).json({ error: "Navigation service not configured — set MAPBOX_TOKEN in environment secrets" });

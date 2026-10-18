@@ -17,6 +17,7 @@ import { getStorageReadiness } from "../lib/storageReadiness";
 import { isValidLiveKitUrl } from "../lib/circleMediaConfig";
 import { getNiaServiceUrl } from "../lib/nia-client";
 import { isMediaPlatformV21Enabled } from "../lib/media-platform";
+import { getMapboxToken } from "../lib/mapbox-config.js";
 import type { WorkerEntry } from "../lib/worker-registry";
 
 // ── Region bucketing ──────────────────────────────────────────────────────────
@@ -228,7 +229,7 @@ router.get("/readiness", async (req, res) => {
   const redisConnection = redisConfigured ? getRedisConnection() : null;
   const redisReady = redisConnection?.status === "ready";
   const redisRequired = process.env.NODE_ENV === "production";
-  const mapConfigured = Boolean(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
+  const mapConfigured = Boolean(getMapboxToken());
   const stripeConfigured =
     Boolean(getStripeSecretKey()) &&
     Boolean(getStripeWebhookSecret());
@@ -507,7 +508,7 @@ router.get("/status", async (_req, res) => {
   checks.push({ name: "nia_ai", ok: dbOk ? true : false, ...(niaEnabled ? {} : { disabled: niaDisabled }) } as { name: string; ok: boolean; latency_ms?: number; disabled?: boolean });
 
   // 3. Map / Geolocation — check env key presence (no external call)
-  const mapOk = !!(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
+  const mapOk = !!getMapboxToken();
   checks.push({ name: "map", ok: mapOk });
 
   const allOk = checks.every(c => c.ok);
