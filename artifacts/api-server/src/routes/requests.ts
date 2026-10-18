@@ -22,6 +22,7 @@ import {
 } from "@workspace/api-zod";
 import { broadcast, broadcastRequestEvent, sendToUser, sendToRequestParticipants } from "../lib/ws-hub";
 import { requestCreationLimiter, requestClaimLimiter, adminLimiter } from "../middlewares/rate-limit";
+import { resolveRequestPaymentType } from "../lib/request-payment-type";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
 import { payHelperFromPool, payHelpersFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance, getHourlyMinimumRate, roundMoney, resolveHelperClaimScope } from "../lib/community-pool";
@@ -738,7 +739,7 @@ router.post("/requests", requireAuth, requireApproved, requestCreationLimiter, a
     description: parsed.data.description != null ? stripTags(parsed.data.description) : null,
     category: parsed.data.category ?? "other",
     urgency: parsed.data.urgency ?? "medium",
-    payment_type: parsed.data.payment_type ?? "pay_it_forward",
+    payment_type: resolveRequestPaymentType(parsed.data.payment_type),
     status: requestStatus,
     // Always derive requester_id from the auth token — never from the body.
     // This prevents a caller from creating requests attributed to other users.

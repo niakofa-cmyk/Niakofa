@@ -10,7 +10,7 @@ export const requestsTable = pgTable("help_requests", {
   category: text("category").notNull().default("other"),
   urgency: text("urgency").notNull().default("medium"),
   status: text("status").notNull().default("open"),
-  payment_type: text("payment_type").notNull().default("pay_it_forward"),
+  payment_type: text("payment_type").notNull().default("goodwill"),
   // onDelete: "restrict" (migration 0070) — was "cascade" (migration 0020), which
   // meant deleting a requester's account silently destroyed every request they
   // ever made, including completed history. RESTRICT blocks the delete outright

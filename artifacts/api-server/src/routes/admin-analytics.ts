@@ -83,7 +83,13 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
         total_paid: sql<number>`COALESCE(SUM(${requestsTable.pledge_paid}), 0)::int`,
       })
       .from(requestsTable)
-      .where(eq(requestsTable.payment_type, "pay_it_forward")),
+      .where(
+        and(
+          eq(requestsTable.payment_type, "pay_it_forward"),
+          eq(requestsTable.status, "completed"),
+          sql`${requestsTable.pledge_amount} > 0`,
+        )
+      ),
 
     // 5. Online helpers count
     db

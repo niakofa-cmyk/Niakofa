@@ -61,6 +61,7 @@ router.get("/impact/:county", generalApiLimiter, async (req, res) => {
     const [
       poolRow,
       requestStats,
+      pledgeStats,
       activeHelperRow,
       recentCompletions,
       topCategories,
@@ -91,6 +92,23 @@ router.get("/impact/:county", generalApiLimiter, async (req, res) => {
           sql`${requestsTable.requester_id} IN (
             SELECT id FROM users WHERE community_id = ${communityId}
           )`
+        ),
+
+      // Only completed requests with a positive amount explicitly pledged by
+      // the requester count as Pay It Forward commitments or repayments.
+      db
+        .select({
+          total_pledged: sql<number>`COALESCE(SUM(${requestsTable.pledge_amount}), 0)::float8`,
+          total_paid: sql<number>`COALESCE(SUM(${requestsTable.pledge_paid}), 0)::float8`,
+        })
+        .from(requestsTable)
+        .where(
+          sql`${requestsTable.status} = 'completed'
+            AND ${requestsTable.payment_type} = 'pay_it_forward'
+            AND ${requestsTable.pledge_amount} > 0
+            AND ${requestsTable.requester_id} IN (
+              SELECT id FROM users WHERE community_id = ${communityId}
+            )`
         ),
 
       // Active helpers in this community right now
@@ -166,6 +184,10 @@ router.get("/impact/:county", generalApiLimiter, async (req, res) => {
           community.target_reserve_amount > 0
             ? Math.round(Math.min(100, ((pool?.balance ?? 0) / community.target_reserve_amount) * 100))
             : 100,
+      },
+      pledges: {
+        total_pledged: pledgeStats[0]?.total_pledged ?? 0,
+        total_paid: pledgeStats[0]?.total_paid ?? 0,
       },
       requests: {
         total:           requests?.total ?? 0,

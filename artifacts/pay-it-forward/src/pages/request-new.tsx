@@ -97,7 +97,7 @@ const PAYMENT_OPTIONS: { type: PaymentType; label: string; desc: string; color: 
   {
     type: "pay_it_forward",
     label: "Pay It Forward",
-    desc: "Can't afford it today? Pay it forward when you're able — no judgment, no pressure.",
+    desc: "Optional pledge. Leaving the amount blank creates no pledge; an amount you enter follows the existing two-year repayment and trust-score lifecycle.",
     color: "border-primary/60 bg-primary/10 text-primary",
     icon: <Heart className="w-5 h-5" />,
   },
@@ -138,7 +138,7 @@ export default function NewRequestScreen() {
   const { currentUser, myLocation, userPlace } = useAppContext();
   const queryClient = useQueryClient();
   const createMutation = useCreateRequest();
-  const [paymentType, setPaymentType] = useState<PaymentType>("pay_it_forward");
+  const [paymentType, setPaymentType] = useState<PaymentType | null>(null);
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [creatingPaymentIntent, setCreatingPaymentIntent] = useState(false);
   const [webGLSupported] = useState(checkWebGL);
@@ -510,6 +510,15 @@ export default function NewRequestScreen() {
       toast({ title: "Error", description: "Please confirm your pickup location on the map", variant: "destructive" });
       return;
     }
+    if (!paymentType) {
+      toast({
+        title: "Choose how to fund this request",
+        description: "Pay It Forward is optional. Choose Pay Now, Pay It Forward, or Goodwill to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const selectedPaymentType = paymentType;
 
     // Append checklist and accessibility needs to description
     const extras: string[] = [];
@@ -537,7 +546,7 @@ export default function NewRequestScreen() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         category: values.category as any,
         urgency: values.urgency as unknown,
-        payment_type: paymentType,
+        payment_type: selectedPaymentType,
         requester_id: currentUser.id,
         lat: pinLocation.lat,
         lng: pinLocation.lng,
@@ -587,7 +596,7 @@ export default function NewRequestScreen() {
 
         // ── Pay Now: create PaymentIntent and show Stripe checkout ──────────
         const amount = values.pay_it_forward_amount;
-        if (paymentType === "immediate" && amount && amount > 0 && isStripeConfigured()) {
+        if (selectedPaymentType === "immediate" && amount && amount > 0 && isStripeConfigured()) {
           setCreatingPaymentIntent(true);
           try {
             const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -1233,7 +1242,8 @@ export default function NewRequestScreen() {
                   ))}
                 </div>
                 <p className="text-xs text-muted-foreground mt-2 text-center">
-                  {PAYMENT_OPTIONS.find(o => o.type === paymentType)?.desc}
+                  {PAYMENT_OPTIONS.find(o => o.type === paymentType)?.desc
+                    ?? "Choose how you want this request funded. Pay It Forward is optional."}
                 </p>
               </div>
 
@@ -1274,13 +1284,15 @@ export default function NewRequestScreen() {
                       <FormControl>
                         <Input
                           type="number"
-                          placeholder="Any amount, when you're able"
+                          placeholder="Optional amount — leave blank for no pledge"
                           className="bg-card border-border"
                           {...field}
                           onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                         />
                       </FormControl>
-                      <p className="text-xs text-muted-foreground mt-1">No pressure — any contribution helps sustain the community</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        No pledge is required to request help. If you enter an amount, it follows the existing two-year lifecycle and trust-score rules. Repayments are manual from Wallet; no card is charged automatically.
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1290,7 +1302,7 @@ export default function NewRequestScreen() {
               <Button
                 type="submit"
                 className="w-full h-13 text-base font-black tracking-widest uppercase"
-                disabled={!pinLocation || createMutation.isPending || creatingPaymentIntent}
+                disabled={!paymentType || !pinLocation || createMutation.isPending || creatingPaymentIntent}
               >
                 {createMutation.isPending || creatingPaymentIntent ? "Posting..." : "📍 Post Request"}
               </Button>
