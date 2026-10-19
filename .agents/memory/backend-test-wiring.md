@@ -54,6 +54,16 @@ pass.
 per-test overrides explicitly when a suite needs them. Mock API-to-service
 clients such as Nia in route unit tests instead of calling a running workflow.
 
+Stripe-backed route tests must pin both `STRIPE_SECRET_KEYS` and
+`STRIPE_SECRET_KEY` before importing the route. In non-development environments,
+the plural variable takes precedence, including when it is present but empty.
+
+**Why:** An ambient empty plural variable disabled a mocked cashout route even
+though the test had set a singular fake key, producing a misleading 503.
+
+**How to apply:** Give both variables the same non-secret test placeholder in
+the route fixture; keep the Stripe SDK mocked so no external request is made.
+
 Database-backed acceptance tests need their own migrated, disposable local
 database, not the workspace's default development database. The Jest test
 boundary must point explicitly at that isolated database; a shell-level

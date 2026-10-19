@@ -92,6 +92,10 @@ jest.unstable_mockModule("../lib/logger.js", () => ({
 let app: express.Express;
 
 beforeAll(async () => {
+  // Pin both Stripe env names so an ambient (possibly empty) plural secret
+  // cannot shadow the legacy singular test value.
+  process.env.NODE_ENV = "test";
+  process.env.STRIPE_SECRET_KEYS = "offline-test-key";
   process.env.STRIPE_SECRET_KEY = "offline-test-key";
   const { default: walletRouter } = await import("../routes/wallet.js");
   app = express();

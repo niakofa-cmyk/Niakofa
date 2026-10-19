@@ -32,6 +32,19 @@ separately gated helper for the private Railway bucket described below.
 
 ## Exchange A/C production state preparation
 
+### Local User A secret diagnostic
+
+Run `pnpm validate:user-a-state-json` in the Replit workspace to check the
+`USER_A_STATE_JSON` value available to that runtime process. The diagnostic
+parses the value in memory, writes no state file, makes no network request, and
+prints only fixed pass/fail checks. It requires every origin to be exactly
+`https://niakofa.com` and checks the Niakofa auth keys by presence only, plus
+the local token/user entry shape used by the existing state validator.
+
+This is a structural offline check, not proof that the session is fresh or
+accepted by the production server. It neither authenticates the state nor
+replaces the existing validation and mutation gates used by production runners.
+
 The guarded A/C builder creates separate Playwright states for the Exchange
 owner/publisher (A) and cross-community privacy viewer (C). It is separate from
 the existing A/B media-certification builder. The script always targets
