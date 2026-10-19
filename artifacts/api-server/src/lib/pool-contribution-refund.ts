@@ -6,7 +6,7 @@
  * helper calculates only the newly refundable portion and is safe for repeated
  * webhook deliveries and multiple partial refunds.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import {
   db,
   communityPoolLedgerTable,
@@ -24,8 +24,12 @@ export interface ReversePoolContributionParams {
   amountRefundedCents: number;
   /** Full charge amount in cents (for proportional partial refunds). */
   chargeAmountCents: number;
+  /** Stripe Charge ID; also recognizes legacy refund keys written with this ID. */
+  stripeChargeId?: string;
   /** Stable Stripe refund identity for idempotency. */
   refundIdempotencyKey: string;
+  /** Exact cumulative net impact from the refund Balance Transactions, if known. */
+  exactNetRefundedCents?: number;
 }
 
 export async function reversePoolContributionOnRefund(
@@ -35,7 +39,9 @@ export async function reversePoolContributionOnRefund(
     stripePaymentIntentId,
     amountRefundedCents,
     chargeAmountCents,
+    stripeChargeId,
     refundIdempotencyKey,
+    exactNetRefundedCents,
   } = params;
 
   if (amountRefundedCents <= 0 || chargeAmountCents <= 0) {
@@ -76,25 +82,53 @@ export async function reversePoolContributionOnRefund(
       return { reversed: false, alreadyReversed: true, netReversedDollars: 0 };
     }
 
+    const [ledgerScope] = await tx
+      .select({
+        government_sponsor_id: communityPoolLedgerTable.government_sponsor_id,
+        government_budget_id: communityPoolLedgerTable.government_budget_id,
+      })
+      .from(communityPoolLedgerTable)
+      .where(eq(communityPoolLedgerTable.id, event.community_pool_ledger_id))
+      .limit(1);
+    if (ledgerScope?.government_budget_id != null && exactNetRefundedCents == null) {
+      return { reversed: false, alreadyReversed: false, netReversedDollars: 0 };
+    }
+
     const ratio = Math.min(1, amountRefundedCents / chargeAmountCents);
-    const desiredNetReversedCents = Math.round(event.net_amount_cents * ratio);
+    const desiredNetReversedCents = exactNetRefundedCents == null
+      ? Math.round(event.net_amount_cents * ratio)
+      : Math.min(event.net_amount_cents, Math.max(0, Math.round(exactNetRefundedCents)));
     const priorReversed = await tx
       .select({
         total: sql<number>`COALESCE(SUM(ABS(${communityPoolLedgerTable.amount})), 0)::float8`,
       })
       .from(communityPoolLedgerTable)
       .where(
-        sql`${communityPoolLedgerTable.entry_type} = 'adjustment'
-          AND ${communityPoolLedgerTable.stripe_payment_intent_id} LIKE ${`refund:${stripePaymentIntentId}:%`}`,
+        and(
+          eq(communityPoolLedgerTable.entry_type, "adjustment"),
+          sql`split_part(${communityPoolLedgerTable.stripe_payment_intent_id}, ':', 1) = 'refund'`,
+          or(
+            sql`split_part(${communityPoolLedgerTable.stripe_payment_intent_id}, ':', 2) = ${stripePaymentIntentId}`,
+            stripeChargeId
+              ? sql`split_part(${communityPoolLedgerTable.stripe_payment_intent_id}, ':', 2) = ${stripeChargeId}`
+              : sql`FALSE`,
+          ),
+        ),
       );
     const priorReversedCents = Math.round(Number(priorReversed[0]?.total ?? 0) * 100);
     const incrementalNetReversedCents = Math.max(0, desiredNetReversedCents - priorReversedCents);
     const netReversedDollars = roundMoney(incrementalNetReversedCents / 100);
+    const fullyRefunded = amountRefundedCents >= chargeAmountCents;
     if (netReversedDollars <= 0) {
+      if (fullyRefunded) {
+        await tx
+          .update(communityPoolFinancialEventsTable)
+          .set({ settlement_status: "failed", updated_at: new Date() })
+          .where(eq(communityPoolFinancialEventsTable.id, event.id));
+      }
       return { reversed: false, alreadyReversed: true, netReversedDollars: 0 };
     }
 
-    const fullyRefunded = amountRefundedCents >= chargeAmountCents;
     const [reversal] = await tx
       .insert(communityPoolLedgerTable)
       .values({
@@ -102,8 +136,10 @@ export async function reversePoolContributionOnRefund(
         amount: -netReversedDollars,
         user_id: event.user_id,
         community_id: event.community_id,
+        government_sponsor_id: ledgerScope?.government_sponsor_id ?? null,
+        government_budget_id: ledgerScope?.government_budget_id ?? null,
         stripe_payment_intent_id: refundIdempotencyKey,
-        notes: `Refund of pool contribution PI ${stripePaymentIntentId} (ratio=${ratio.toFixed(4)})`,
+        notes: `Refund of pool contribution PI ${stripePaymentIntentId} (net_cents=${incrementalNetReversedCents})`,
       })
       .onConflictDoNothing()
       .returning({ id: communityPoolLedgerTable.id });
@@ -120,7 +156,9 @@ export async function reversePoolContributionOnRefund(
         .where(eq(communityPoolFinancialEventsTable.id, event.id));
     }
 
-    if (event.user_id != null) {
+    // Civic receipts belong to the sponsor entity, not the staff member who
+    // initiated the PaymentIntent; do not create a personal wallet history row.
+    if (event.user_id != null && ledgerScope?.government_budget_id == null) {
       await tx
         .insert(transactionsTable)
         .values({

@@ -2,12 +2,28 @@ import { Router } from "express";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import Stripe from "stripe";
-import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable, communityPoolLedgerTable, walletCashoutsTable, diasporaHubsTable, diasporaHubPledgesTable } from "@workspace/db";
+import {
+  db,
+  stripeAccountsTable,
+  paymentTransactionsTable,
+  usersTable,
+  requestsTable,
+  transactionsTable,
+  communityPoolLedgerTable,
+  communityPoolFinancialEventsTable,
+  governmentBudgetReceiptsTable,
+  walletCashoutsTable,
+  diasporaHubsTable,
+  diasporaHubPledgesTable,
+} from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { sendPushToUser } from "./push";
 import { wasRequestFronted, recordPoolContributionSettlement, getPoolBalance, processPendingMinimums, syncHubReservedBalance } from "../lib/community-pool";
-import { getStripeSettlementBreakdown } from "../lib/stripe-settlement";
+import {
+  getStripeRefundNetBreakdown,
+  getStripeSettlementBreakdown,
+} from "../lib/stripe-settlement";
 import { logger } from "../lib/logger";
 import { getStripeSecretKey, getStripeWebhookSecret } from "../lib/stripe-config";
 import { paymentLimiter } from "../middlewares/rate-limit";
@@ -15,6 +31,11 @@ import { reversePoolContributionOnRefund } from "../lib/pool-contribution-refund
 import { z } from "zod";
 import { executeHelperPayout } from "../lib/payout-service";
 import { logHandledFailure } from "../lib/handled-failure";
+import {
+  recordGovernmentConnectedPayout,
+  recordGovernmentFundingTransfer,
+  recordGovernmentFundingTransferReversal,
+} from "../lib/government-funding-reconciliation";
 
 const router = Router();
 
@@ -92,6 +113,27 @@ router.post("/stripe/webhook", async (req, res) => {
         if (pi.metadata?.["pool_contribution"] === "true") {
           const contributorId = parseInt(pi.metadata["user_id"] ?? "") || null;
           const communityId = parseInt(pi.metadata["community_id"] ?? "") || null;
+          const governmentReceiptId = parseInt(pi.metadata["government_budget_receipt_id"] ?? "") || null;
+          let governmentReceipt: typeof governmentBudgetReceiptsTable.$inferSelect | undefined;
+          if (governmentReceiptId != null) {
+            [governmentReceipt] = await db
+              .select()
+              .from(governmentBudgetReceiptsTable)
+              .where(eq(governmentBudgetReceiptsTable.id, governmentReceiptId))
+              .limit(1);
+            if (
+              !governmentReceipt ||
+              governmentReceipt.government_sponsor_id !== Number(pi.metadata["government_sponsor_id"]) ||
+              governmentReceipt.budget_id !== Number(pi.metadata["government_budget_id"]) ||
+              governmentReceipt.community_id !== communityId ||
+              governmentReceipt.created_by_user_id !== contributorId ||
+              governmentReceipt.gross_amount_cents !== pi.amount ||
+              (governmentReceipt.stripe_payment_intent_id != null &&
+                governmentReceipt.stripe_payment_intent_id !== pi.id)
+            ) {
+              throw new Error(`Government budget receipt metadata does not match PaymentIntent ${pi.id}`);
+            }
+          }
           const isGeneralFund = pi.metadata?.["pool_destination"] === "general";
           if (communityId == null && !isGeneralFund && pi.metadata?.["anonymous_donation"] !== "true") {
             throw new Error(`Pool contribution ${pi.id} is missing an explicit community destination`);
@@ -109,15 +151,62 @@ router.post("/stripe/webhook", async (req, res) => {
           });
           const recorded = await recordPoolContributionSettlement({
             userId: contributorId,
+            historyUserId: governmentReceipt ? null : contributorId,
             communityId,
+            governmentSponsorId: governmentReceipt?.government_sponsor_id ?? null,
+            governmentBudgetId: governmentReceipt?.budget_id ?? null,
             poolDestination: isGeneralFund ? "general" : undefined,
             notes: isGeneralFund
               ? "Anonymous donation to Niakofa General Fund"
-              : "Sponsor contribution via Stripe",
+              : governmentReceipt
+                ? `Municipal receipt for budget ${governmentReceipt.budget_id} via Stripe`
+                : "Sponsor contribution via Stripe",
             settlement: {
               ...settlement,
             },
           });
+          if (governmentReceipt) {
+            const [ledgerEntry] = await db
+              .select({ id: communityPoolLedgerTable.id })
+              .from(communityPoolLedgerTable)
+              .where(eq(communityPoolLedgerTable.stripe_payment_intent_id, pi.id))
+              .limit(1);
+            const [financialEvent] = await db
+              .select({ id: communityPoolFinancialEventsTable.id })
+              .from(communityPoolFinancialEventsTable)
+              .where(eq(communityPoolFinancialEventsTable.stripe_payment_intent_id, pi.id))
+              .limit(1);
+            await db
+              .update(governmentBudgetReceiptsTable)
+              .set({
+                stripe_payment_intent_id: pi.id,
+                community_pool_ledger_id: ledgerEntry?.id ?? governmentReceipt.community_pool_ledger_id,
+                community_pool_financial_event_id: financialEvent?.id ?? governmentReceipt.community_pool_financial_event_id,
+                gross_amount_cents: settlement.grossAmountCents,
+                stripe_fee_cents: settlement.stripeFeeCents,
+                net_amount_cents: settlement.netAmountCents,
+                net_refunded_cents: sql`LEAST(
+                  ${settlement.netAmountCents},
+                  ${governmentBudgetReceiptsTable.net_refunded_cents}
+                )`,
+                currency: settlement.currency,
+                settlement_status: sql`CASE
+                  WHEN ${governmentBudgetReceiptsTable.status} IN ('refunded', 'partially_refunded')
+                    AND ${governmentBudgetReceiptsTable.settlement_status} = 'pending' THEN 'pending'
+                  WHEN ${governmentBudgetReceiptsTable.status} = 'refunded' THEN 'failed'
+                  ELSE ${settlement.settlementStatus}
+                END`,
+                stripe_livemode: settlement.stripeLivemode,
+                status: sql`CASE
+                  WHEN ${governmentBudgetReceiptsTable.status} IN ('refunded', 'partially_refunded')
+                    THEN ${governmentBudgetReceiptsTable.status}
+                  ELSE 'succeeded'
+                END`,
+                succeeded_at: sql`COALESCE(${governmentBudgetReceiptsTable.succeeded_at}, NOW())`,
+                updated_at: new Date(),
+              })
+              .where(eq(governmentBudgetReceiptsTable.id, governmentReceipt.id));
+          }
           if (recorded.recorded) {
             // Pool replenished — backfill any queued guaranteed minimums
             await processPendingMinimums();
@@ -518,6 +607,19 @@ router.post("/stripe/webhook", async (req, res) => {
       case "payment_intent.payment_failed": {
         const pi = event.data.object as Stripe.PaymentIntent;
 
+        const governmentReceiptId = parseInt(pi.metadata?.["government_budget_receipt_id"] ?? "") || null;
+        if (governmentReceiptId != null) {
+          await db
+            .update(governmentBudgetReceiptsTable)
+            .set({ updated_at: new Date() })
+            .where(and(
+              eq(governmentBudgetReceiptsTable.id, governmentReceiptId),
+              sql`${governmentBudgetReceiptsTable.status} IN ('creating', 'pending')`,
+            ));
+          logger.info({ pi: pi.id, receipt_id: governmentReceiptId }, "civic budget payment attempt failed; awaiting retry or signed cancellation");
+          break;
+        }
+
         if (pi.metadata?.["hub_pledge"] === "true") {
           const [cancelled] = await db
             .update(diasporaHubPledgesTable)
@@ -537,6 +639,34 @@ router.post("/stripe/webhook", async (req, res) => {
           .update(paymentTransactionsTable)
           .set({ state: "failed", updated_at: new Date() })
           .where(eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id));
+        break;
+      }
+
+      case "payment_intent.canceled": {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        const governmentReceiptId = parseInt(pi.metadata?.["government_budget_receipt_id"] ?? "") || null;
+        if (governmentReceiptId != null) {
+          await db
+            .update(governmentBudgetReceiptsTable)
+            .set({ status: "canceled", updated_at: new Date() })
+            .where(and(
+              eq(governmentBudgetReceiptsTable.id, governmentReceiptId),
+              sql`${governmentBudgetReceiptsTable.status} IN ('creating', 'pending')`,
+            ));
+        }
+        break;
+      }
+
+      case "payout.paid":
+      case "payout.failed":
+      case "payout.canceled": {
+        await recordGovernmentConnectedPayout(
+          stripe!,
+          event.id,
+          event.livemode,
+          event.account ?? null,
+          event.data.object as Stripe.Payout,
+        );
         break;
       }
 
@@ -594,6 +724,7 @@ router.post("/stripe/webhook", async (req, res) => {
               .where(eq(walletCashoutsTable.id, parseInt(transfer.metadata["cashout_id"])));
           }
         }
+        await recordGovernmentFundingTransfer(transfer);
         break;
       }
 
@@ -604,6 +735,7 @@ router.post("/stripe/webhook", async (req, res) => {
         // webhook deliveries find state already 'reversed' → 0 rows → skip all
         // downstream effects.
         const transfer = event.data.object as Stripe.Transfer;
+        await recordGovernmentFundingTransferReversal(transfer);
         if (transfer.metadata?.["source"] === "benevolence_wallet" && transfer.metadata?.["cashout_id"]) {
           const cashoutId = parseInt(transfer.metadata["cashout_id"]);
           const amountDollars = transfer.amount_reversed / 100;
@@ -696,15 +828,45 @@ router.post("/stripe/webhook", async (req, res) => {
           : charge.payment_intent?.id ?? null;
         if (!piId) break;
 
-        // Pool contributions do not have a payment_transactions row. Stripe's
-        // amount_refunded is cumulative, so the helper reverses only the
-        // incremental net amount and remains safe for partial refund updates.
+        const refundAmountCents = Math.max(0, Number(charge.amount_refunded) || 0);
+        const chargeAmountCents = Math.max(0, Number(charge.amount) || 0);
+        const [governmentReceipt] = await db
+          .select({
+            id: governmentBudgetReceiptsTable.id,
+            gross_amount_cents: governmentBudgetReceiptsTable.gross_amount_cents,
+            net_amount_cents: governmentBudgetReceiptsTable.net_amount_cents,
+            net_refunded_cents: governmentBudgetReceiptsTable.net_refunded_cents,
+            settlement_status: governmentBudgetReceiptsTable.settlement_status,
+          })
+          .from(governmentBudgetReceiptsTable)
+          .where(eq(governmentBudgetReceiptsTable.stripe_payment_intent_id, piId))
+          .limit(1);
+        const refundBreakdown = governmentReceipt
+          ? await getStripeRefundNetBreakdown(stripe!, charge.id)
+          : null;
+
+        // Municipal pool reversals wait for exact refund Balance Transactions;
+        // other existing pool contributions retain their prior cumulative
+        // refund handling.
         const poolRefund = await reversePoolContributionOnRefund({
           stripePaymentIntentId: piId,
-          amountRefundedCents: charge.amount_refunded,
-          chargeAmountCents: charge.amount,
-          refundIdempotencyKey: `refund:${charge.id}:${charge.amount_refunded}`,
+          stripeChargeId: charge.id,
+          amountRefundedCents: refundAmountCents,
+          chargeAmountCents,
+          refundIdempotencyKey: `refund:${piId}:${charge.id}:${charge.amount_refunded}`,
+          ...(refundBreakdown?.complete
+            ? { exactNetRefundedCents: refundBreakdown.netRefundedCents }
+            : {}),
         });
+        if (
+          governmentReceipt &&
+          refundBreakdown?.complete &&
+          refundAmountCents > 0 &&
+          !poolRefund.reversed &&
+          !poolRefund.alreadyReversed
+        ) {
+          throw new Error(`Could not reconcile the exact pool refund for receipt ${governmentReceipt.id}`);
+        }
         if (poolRefund.reversed) {
           const balance = await getPoolBalance();
           broadcast({ type: "pool_updated", payload: { balance } });
@@ -714,8 +876,47 @@ router.post("/stripe/webhook", async (req, res) => {
           );
         }
 
-        const refundAmountCents = Math.max(0, Number(charge.amount_refunded) || 0);
-        const chargeAmountCents = Math.max(0, Number(charge.amount) || 0);
+        if (governmentReceipt) {
+          const fullyRefunded = refundAmountCents >= governmentReceipt.gross_amount_cents;
+          const receiptSettlementStatus = !refundBreakdown?.complete
+            ? "pending"
+            : fullyRefunded
+              ? "failed"
+              : governmentReceipt.settlement_status;
+          await db
+            .update(communityPoolFinancialEventsTable)
+            .set({ settlement_status: receiptSettlementStatus, updated_at: new Date() })
+            .where(eq(communityPoolFinancialEventsTable.stripe_payment_intent_id, piId));
+          await db
+            .update(governmentBudgetReceiptsTable)
+            .set({
+              amount_refunded_cents: sql`GREATEST(
+                ${governmentBudgetReceiptsTable.amount_refunded_cents},
+                ${refundAmountCents}
+              )`,
+              ...(refundBreakdown?.complete
+                ? {
+                    net_refunded_cents: sql`CASE
+                      WHEN ${governmentBudgetReceiptsTable.net_amount_cents} > 0 THEN LEAST(
+                        ${governmentBudgetReceiptsTable.net_amount_cents},
+                        GREATEST(${governmentBudgetReceiptsTable.net_refunded_cents}, ${refundBreakdown.netRefundedCents})
+                      )
+                      ELSE GREATEST(${governmentBudgetReceiptsTable.net_refunded_cents}, ${refundBreakdown.netRefundedCents})
+                    END`,
+                    refund_net_verified: true,
+                  }
+                : {}),
+              status: sql`CASE
+                WHEN GREATEST(${governmentBudgetReceiptsTable.amount_refunded_cents}, ${refundAmountCents})
+                  >= ${governmentBudgetReceiptsTable.gross_amount_cents}
+                  THEN 'refunded'
+                ELSE 'partially_refunded'
+              END`,
+              settlement_status: receiptSettlementStatus,
+              updated_at: new Date(),
+            })
+            .where(eq(governmentBudgetReceiptsTable.id, governmentReceipt.id));
+        }
 
         const refundResult = await db.transaction(async (tx) => {
           const [existing] = await tx

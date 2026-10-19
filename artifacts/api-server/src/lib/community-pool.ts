@@ -491,6 +491,23 @@ async function getTotalHubReservedBalance(
   return reserved > 0 ? reserved : 0;
 }
 
+async function getTotalGovernmentReservedBalance(
+  tx: DbOrTx = db,
+  communityId?: number | null,
+): Promise<number> {
+  const [row] = await tx
+    .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
+    .from(communityPoolLedgerTable)
+    .where(
+      communityId == null
+        ? sql`${communityPoolLedgerTable.government_budget_id} IS NOT NULL`
+        : sql`${communityPoolLedgerTable.government_budget_id} IS NOT NULL
+          AND ${communityPoolLedgerTable.community_id} = ${communityId}`,
+    );
+  const reserved = row?.balance ?? 0;
+  return reserved > 0 ? reserved : 0;
+}
+
 interface PoolDebitParams {
   entryType: "helper_front" | "guaranteed_minimum";
   amount: number; // positive dollars to pay OUT of the pool
@@ -579,11 +596,12 @@ export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPa
         }
       } else {
         const totalReserved = await getTotalHubReservedBalance(tx, communityId);
-        const unrestricted = balance - totalReserved;
+        const governmentReserved = await getTotalGovernmentReservedBalance(tx, communityId);
+        const unrestricted = balance - totalReserved - governmentReserved;
         if (toCents(unrestricted) < toCents(amount)) {
           logger.warn(
-            { request_id: requestId, helper_id: helperId, balance, total_hub_reserved: totalReserved, unrestricted, needed: amount, entry_type: entryType },
-            "Unrestricted pool balance insufficient — payment skipped (hub reserves are ring-fenced off)"
+            { request_id: requestId, helper_id: helperId, balance, total_hub_reserved: totalReserved, total_government_reserved: governmentReserved, unrestricted, needed: amount, entry_type: entryType },
+            "Unrestricted pool balance insufficient — hub and government reserves are ring-fenced off"
           );
           return "insufficient";
         }
@@ -731,11 +749,12 @@ export async function payHelpersFromPool(params: {
         }
       } else {
         const totalReserved = await getTotalHubReservedBalance(tx, communityId);
-        const unrestricted = balance - totalReserved;
+        const governmentReserved = await getTotalGovernmentReservedBalance(tx, communityId);
+        const unrestricted = balance - totalReserved - governmentReserved;
         if (toCents(unrestricted) < toCents(totalAmount)) {
           logger.warn(
-            { request_id: requestId, balance, total_hub_reserved: totalReserved, unrestricted, needed: totalAmount, entry_type: entryType },
-            "Unrestricted pool balance insufficient for split payment — skipped"
+            { request_id: requestId, balance, total_hub_reserved: totalReserved, total_government_reserved: governmentReserved, unrestricted, needed: totalAmount, entry_type: entryType },
+            "Unrestricted pool balance insufficient for split payment — restricted reserves are ring-fenced"
           );
           return "insufficient";
         }
@@ -1177,6 +1196,8 @@ export async function recordPoolContributionSettlement(params: {
   userId: number | null;
   historyUserId?: number | null;
   communityId?: number | null;
+  governmentSponsorId?: number | null;
+  governmentBudgetId?: number | null;
   /** Explicit opt-in for the platform-wide anonymous General Fund. */
   poolDestination?: "general";
   notes?: string;
@@ -1186,6 +1207,8 @@ export async function recordPoolContributionSettlement(params: {
     userId,
     historyUserId = userId,
     communityId,
+    governmentSponsorId,
+    governmentBudgetId,
     poolDestination,
     notes,
   } = params;
@@ -1238,6 +1261,7 @@ export async function recordPoolContributionSettlement(params: {
         .select({
           id: communityPoolLedgerTable.id,
           amount: communityPoolLedgerTable.amount,
+          government_budget_id: communityPoolLedgerTable.government_budget_id,
         })
         .from(communityPoolLedgerTable)
         .where(eq(communityPoolLedgerTable.stripe_payment_intent_id, settlement.stripePaymentIntentId))
@@ -1250,8 +1274,12 @@ export async function recordPoolContributionSettlement(params: {
           amount: roundMoney(settlement.netAmountCents / 100),
           user_id: userId,
           community_id: communityId ?? null,
+          government_sponsor_id: governmentSponsorId ?? null,
+          government_budget_id: governmentBudgetId ?? null,
           stripe_payment_intent_id: settlement.stripePaymentIntentId,
-          notes: notes ?? "Sponsor contribution via Stripe",
+          notes: notes ?? (governmentBudgetId != null
+            ? "Municipal budget receipt via Stripe (restricted)"
+            : "Sponsor contribution via Stripe"),
         }).returning({ id: communityPoolLedgerTable.id });
         ledgerId = ledgerEntry?.id ?? null;
       } else {
@@ -1262,6 +1290,8 @@ export async function recordPoolContributionSettlement(params: {
             amount: adjustment,
             user_id: userId,
             community_id: communityId ?? null,
+            government_sponsor_id: governmentSponsorId ?? null,
+            government_budget_id: governmentBudgetId ?? existingLedger.government_budget_id ?? null,
             notes: `Settlement adjustment for Stripe PaymentIntent ${settlement.stripePaymentIntentId}`,
           });
         }

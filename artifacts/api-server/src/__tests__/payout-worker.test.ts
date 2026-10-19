@@ -113,6 +113,9 @@ jest.unstable_mockModule("../lib/logger", () => ({
 jest.unstable_mockModule("../lib/stripe-config", () => ({
   getStripeSecretKey: () => "sk_test_offline",
 }));
+jest.unstable_mockModule("../lib/government-funding-reconciliation", () => ({
+  recordGovernmentFundingTransfer: jest.fn(),
+}));
 jest.unstable_mockModule("../lib/worker-lifecycle", () => ({ trackWorker: jest.fn() }));
 jest.unstable_mockModule("drizzle-orm", () => ({
   and: jest.fn((...conditions: unknown[]) => conditions),

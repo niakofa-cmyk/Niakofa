@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
 import { toast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
@@ -69,6 +70,11 @@ interface Budget {
   created_at: string;
   committed_amount: string;
   available_amount: string;
+  gross_received_amount: string;
+  stripe_fee_amount: string;
+  net_received_amount: string;
+  usable_received_amount: string;
+  remaining_authorization_amount: string;
 }
 
 interface Allocation {
@@ -85,6 +91,32 @@ interface Allocation {
   status: "approved";
   notes: string | null;
   created_at: string;
+  transfer_amount: string;
+  transfer_status: "transferred" | "not_transferred";
+  bank_paid_amount: string;
+  bank_payouts: {
+    reference: string;
+    status: string;
+    matched_amount: string;
+    arrival_date: string | null;
+  }[];
+}
+
+interface FundingReceipt {
+  id: number;
+  budget_id: number;
+  budget_name: string;
+  gross_amount: string;
+  refunded_amount: string;
+  stripe_fee_amount: string;
+  net_amount: string;
+  net_refunded_amount: string;
+  net_after_refunds: string | null;
+  refund_net_verified: boolean;
+  status: string;
+  settlement_status: string;
+  stripe_payment_intent_id: string | null;
+  created_at: string;
 }
 
 interface FundingReport {
@@ -93,8 +125,22 @@ interface FundingReport {
     committed_amount: string;
     available_amount: string;
     completed_service_value: string;
+    gross_received_amount: string;
+    stripe_fee_amount: string;
+    net_received_amount: string;
+    usable_received_amount: string;
+    transfer_amount: string;
+    bank_paid_amount: string;
   };
+  receipts: FundingReceipt[];
   allocations: Allocation[];
+}
+
+interface FundingPaymentIntent {
+  receiptId: number;
+  budgetId: number;
+  amount: number;
+  clientSecret: string;
 }
 
 interface OpenFundingRequest {
@@ -195,6 +241,10 @@ export default function CivicPortalPage() {
     budget_id: "", request_id: "", amount: "", notes: "",
   });
   const [allocationSubmitting, setAllocationSubmitting] = useState(false);
+  const [fundingPaymentAmounts, setFundingPaymentAmounts] = useState<Record<number, string>>({});
+  const [fundingPaymentAttemptKeys, setFundingPaymentAttemptKeys] = useState<Record<number, string>>({});
+  const [fundingPaymentSubmitting, setFundingPaymentSubmitting] = useState<number | null>(null);
+  const [fundingPaymentIntent, setFundingPaymentIntent] = useState<FundingPaymentIntent | null>(null);
 
   // Load the user's approved gov-sponsor record
   useEffect(() => {
@@ -231,6 +281,13 @@ export default function CivicPortalPage() {
     setFundingLoading(true);
     setFundingError("");
     try {
+      // Stripe balance transactions can become available after the initial
+      // success webhook. Refresh that authoritative state before calculating
+      // cash-backed commitments; a refresh failure never fabricates a receipt.
+      await fetch(`${BASE}/api/civic/funding/receipts/refresh`, {
+        method: "POST",
+        headers: authHeaders(),
+      }).catch(() => undefined);
       const [budgetRes, reportRes, requestsRes] = await Promise.all([
         fetch(`${BASE}/api/civic/funding/budgets`, { headers: authHeaders() }),
         fetch(`${BASE}/api/civic/funding/report`, { headers: authHeaders() }),
@@ -314,6 +371,113 @@ export default function CivicPortalPage() {
     }
   };
 
+  const startBudgetPayment = async (event: React.FormEvent, budget: Budget) => {
+    event.preventDefault();
+    const amount = Number(fundingPaymentAmounts[budget.id] ?? "");
+    if (!isStripeConfigured()) {
+      toast({ title: "Stripe payments are unavailable", description: "This environment does not have a matching Stripe payment key.", variant: "destructive" });
+      return;
+    }
+    if (
+      budget.status !== "active" ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > Number(budget.remaining_authorization_amount)
+    ) {
+      toast({ title: "Enter an amount within the remaining authorization", variant: "destructive" });
+      return;
+    }
+    setFundingPaymentSubmitting(budget.id);
+    const storageKey = `niakofa_civic_funding_attempt_${budget.id}`;
+    let operationKey: string;
+    try {
+      operationKey = sessionStorage.getItem(storageKey) ?? fundingPaymentAttemptKeys[budget.id] ?? crypto.randomUUID();
+      sessionStorage.setItem(storageKey, operationKey);
+    } catch {
+      operationKey = fundingPaymentAttemptKeys[budget.id] ?? crypto.randomUUID();
+    }
+    setFundingPaymentAttemptKeys(current => ({ ...current, [budget.id]: operationKey }));
+    try {
+      const response = await fetch(`${BASE}/api/civic/funding/budgets/${budget.id}/payment-intent`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Idempotency-Key": operationKey },
+        body: JSON.stringify({ amount }),
+      });
+      const data = await response.json().catch(() => ({})) as {
+        receipt_id?: number;
+        status?: string;
+        client_secret?: string | null;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(data.error ?? "Could not start the Stripe payment.");
+      setFundingPaymentAmounts((current) => ({ ...current, [budget.id]: "" }));
+      if (!data.receipt_id || !data.client_secret) {
+        try { sessionStorage.removeItem(storageKey); } catch { /* storage is optional */ }
+        setFundingPaymentAttemptKeys(current => {
+          const { [budget.id]: _removed, ...rest } = current;
+          return rest;
+        });
+        toast({
+          title: "Payment is awaiting Stripe confirmation",
+          description: "A budget receipt appears only after the signed Stripe event is processed.",
+        });
+        await loadFunding();
+        return;
+      }
+      setFundingPaymentIntent({
+        receiptId: data.receipt_id,
+        budgetId: budget.id,
+        amount,
+        clientSecret: data.client_secret,
+      });
+    } catch (error) {
+      toast({
+        title: "Payment could not be started",
+        description: error instanceof Error ? error.message : "Retry this attempt; it uses the same idempotency key.",
+        variant: "destructive",
+      });
+    } finally {
+      setFundingPaymentSubmitting(null);
+    }
+  };
+
+  const finishBudgetPayment = async (cancel: boolean) => {
+    if (!fundingPaymentIntent) return;
+    const intent = fundingPaymentIntent;
+    const storageKey = `niakofa_civic_funding_attempt_${intent.budgetId}`;
+    setFundingPaymentIntent(null);
+    setFundingPaymentAttemptKeys(current => {
+      const { [intent.budgetId]: _removed, ...rest } = current;
+      return rest;
+    });
+    if (cancel) {
+      try {
+        const response = await fetch(`${BASE}/api/civic/funding/receipts/${intent.receiptId}/cancel`, {
+          method: "POST",
+          headers: authHeaders(),
+        });
+        if (response.ok) {
+          try { sessionStorage.removeItem(storageKey); } catch { /* storage is optional */ }
+        } else {
+          const data = await response.json().catch(() => ({})) as { error?: string };
+          toast({
+            title: "Payment may still be processing",
+            description: data.error ?? "The receipt will remain pending until Stripe confirms its state.",
+          });
+        }
+      } catch {
+        toast({ title: "Payment status could not be checked", description: "The receipt remains reserved until Stripe confirms its state." });
+      }
+    } else {
+      try { sessionStorage.removeItem(storageKey); } catch { /* storage is optional */ }
+      toast({
+        title: "Payment submitted",
+        description: "The receipt will be confirmed after Stripe's signed event is processed.",
+      });
+    }
+    await loadFunding();
+  };
+
   const submitAllocation = async (event: React.FormEvent) => {
     event.preventDefault();
     const amount = Number(allocationForm.amount);
@@ -345,7 +509,7 @@ export default function CivicPortalPage() {
         throw new Error(err.error ?? "Could not record commitment.");
       }
       setAllocationForm(current => ({ ...current, amount: "", notes: "" }));
-      toast({ title: "Commitment recorded", description: "This records a reservation only; no payment transfer occurs." });
+      toast({ title: "Commitment recorded", description: "This reserves confirmed receipts; any helper transfer is shown separately after it occurs." });
       await loadFunding();
     } catch (error) {
       toast({ title: "Commitment not recorded", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
@@ -675,11 +839,15 @@ export default function CivicPortalPage() {
             ) : (
               <>
                 {report && (
-                  <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
                     {[
                       { label: "Budget authorization", value: report.summary.authorized_amount, tone: "text-slate-900" },
+                      { label: "Net received", value: report.summary.net_received_amount, tone: "text-blue-900" },
+                      { label: "Stripe fees", value: report.summary.stripe_fee_amount, tone: "text-slate-700" },
                       { label: "Committed amount", value: report.summary.committed_amount, tone: "text-amber-800" },
-                      { label: "Available authorization", value: report.summary.available_amount, tone: "text-emerald-800" },
+                      { label: "Available to commit", value: report.summary.available_amount, tone: "text-emerald-800" },
+                      { label: "Helper transfers", value: report.summary.transfer_amount, tone: "text-cyan-900" },
+                      { label: "Bank payouts confirmed", value: report.summary.bank_paid_amount, tone: "text-violet-900" },
                       { label: "Completed service value", value: report.summary.completed_service_value, tone: "text-cyan-900" },
                     ].map(metric => (
                       <div key={metric.label} className="rounded-xl border border-border bg-background p-3.5">
@@ -697,7 +865,7 @@ export default function CivicPortalPage() {
                     <div className="flex items-end justify-between gap-3">
                       <div>
                         <h3 className="flex items-center gap-2 text-sm font-bold"><Banknote className="h-4 w-4 text-primary" /> Budget authorizations</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">Balances shown are authorization less recorded commitments.</p>
+                        <p className="mt-1 text-xs text-muted-foreground">Only Stripe-confirmed, available net receipts can back new commitments.</p>
                       </div>
                       <Button data-testid="button-refresh-funding" size="sm" variant="ghost" onClick={() => void loadFunding()} aria-label="Refresh budget and commitment records">
                         <RefreshCw className={`h-4 w-4 ${fundingLoading ? "animate-spin" : ""}`} />
@@ -726,11 +894,52 @@ export default function CivicPortalPage() {
                                 <Button data-testid={`button-close-budget-${budget.id}`} size="sm" variant="outline" className="h-8 text-xs" onClick={() => void closeBudget(budget)}>Close budget</Button>
                               )}
                             </div>
-                            <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3">
+                            <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 lg:grid-cols-4">
                               <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Authorized</p><p data-testid={`value-budget-authorized-${budget.id}`} className="mt-1 font-mono text-xs font-semibold">{formatMoney(budget.authorized_amount)}</p></div>
+                              <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Net received</p><p data-testid={`value-budget-received-${budget.id}`} className="mt-1 font-mono text-xs font-semibold">{formatMoney(budget.net_received_amount)}</p></div>
                               <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Committed</p><p data-testid={`value-budget-committed-${budget.id}`} className="mt-1 font-mono text-xs font-semibold">{formatMoney(budget.committed_amount)}</p></div>
-                              <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Available</p><p data-testid={`value-budget-available-${budget.id}`} className="mt-1 font-mono text-xs font-semibold text-emerald-800">{formatMoney(budget.available_amount)}</p></div>
+                              <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Available to commit</p><p data-testid={`value-budget-available-${budget.id}`} className="mt-1 font-mono text-xs font-semibold text-emerald-800">{formatMoney(budget.available_amount)}</p></div>
                             </div>
+                            <form
+                              onSubmit={event => void startBudgetPayment(event, budget)}
+                              className="mt-3 flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-end"
+                            >
+                              <label className="flex-1 space-y-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                Receive funds through Stripe
+                                <Input
+                                  data-testid={`input-budget-payment-${budget.id}`}
+                                  type="number"
+                                  min="0.01"
+                                  max={budget.remaining_authorization_amount}
+                                  step="0.01"
+                                  value={fundingPaymentAmounts[budget.id] ?? ""}
+                                  onChange={event => setFundingPaymentAmounts(current => ({ ...current, [budget.id]: event.target.value }))}
+                                  disabled={budget.status !== "active" || Number(budget.remaining_authorization_amount) <= 0}
+                                  placeholder="Amount in USD"
+                                  className="mt-1 font-normal normal-case tracking-normal"
+                                />
+                              </label>
+                              <Button
+                                data-testid={`button-budget-payment-${budget.id}`}
+                                type="submit"
+                                size="sm"
+                                disabled={
+                                  fundingPaymentSubmitting === budget.id ||
+                                  budget.status !== "active" ||
+                                  Number(budget.remaining_authorization_amount) <= 0 ||
+                                  (report?.receipts ?? []).some(receipt => receipt.budget_id === budget.id && ["creating", "pending"].includes(receipt.status)) ||
+                                  !isStripeConfigured()
+                                }
+                              >
+                                {fundingPaymentSubmitting === budget.id ? "Starting…" : "Pay budget online"}
+                              </Button>
+                            </form>
+                            {(report?.receipts ?? []).some(receipt => receipt.budget_id === budget.id && ["creating", "pending"].includes(receipt.status)) && (
+                              <p className="mt-2 text-[11px] text-amber-800">A Stripe payment is still processing for this budget. Wait for its receipt status before starting another.</p>
+                            )}
+                            {!isStripeConfigured() && (
+                              <p className="mt-2 text-[11px] text-muted-foreground">Stripe online funding is not configured for this environment.</p>
+                            )}
                           </article>
                         ))}
                       </div>
@@ -740,7 +949,7 @@ export default function CivicPortalPage() {
                   <div className="space-y-3">
                     <div>
                       <h3 className="flex items-center gap-2 text-sm font-bold"><CircleDollarSign className="h-4 w-4 text-primary" /> Record a commitment</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">Reservation against an open request. No cash transfer occurs here.</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Reservation against an open request. No helper transfer occurs when the commitment is recorded.</p>
                     </div>
                     <form onSubmit={submitAllocation} className="space-y-3 rounded-xl border border-border bg-muted/20 p-3.5">
                       <label className="block space-y-1.5 text-xs font-semibold">
@@ -776,6 +985,52 @@ export default function CivicPortalPage() {
                 <div className="border-t border-border pt-4">
                   <div className="mb-3 flex items-end justify-between gap-3">
                     <div>
+                      <h3 className="text-sm font-bold">Stripe receipt register</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Receipts are confirmed only by signed Stripe events; settlement availability is tracked separately.</p>
+                    </div>
+                    <span className="font-mono text-xs text-muted-foreground">{report?.receipts.length ?? 0} records</span>
+                  </div>
+                  {(report?.receipts.length ?? 0) === 0 ? (
+                    <div data-testid="state-receipts-empty" className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-xs text-muted-foreground">No online receipts have been confirmed.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {(report?.receipts ?? []).map(receipt => (
+                        <article data-testid={`row-receipt-${receipt.id}`} key={receipt.id} className="rounded-xl border border-border bg-background px-3.5 py-3">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold">{receipt.budget_name}</p>
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                {new Date(receipt.created_at).toLocaleDateString()}
+                                {receipt.stripe_payment_intent_id && ` · Stripe ${receipt.stripe_payment_intent_id.slice(-8)}`}
+                              </p>
+                            </div>
+                            <span data-testid={`status-receipt-${receipt.id}`} className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-900">
+                              {receipt.refunded_amount !== "0.00" && !receipt.refund_net_verified
+                                ? "Refund · reconciling"
+                                : receipt.status === "refunded"
+                                  ? "Refunded"
+                                  : receipt.status === "partially_refunded"
+                                    ? "Partially refunded"
+                                    : receipt.status === "succeeded"
+                                      ? receipt.settlement_status === "available" ? "Available" : "Confirmed · settling"
+                                      : statusLabel(receipt.status)}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                            <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Gross received</p><p className="mt-1 font-mono font-semibold">{formatMoney(receipt.gross_amount)}</p></div>
+                            <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Stripe fee</p><p className="mt-1 font-mono font-semibold">{formatMoney(receipt.stripe_fee_amount)}</p></div>
+                            <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Refunded</p><p className="mt-1 font-mono font-semibold">{formatMoney(receipt.refunded_amount)}</p></div>
+                            <div><p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Net after refunds</p><p className="mt-1 font-mono font-semibold">{receipt.net_after_refunds == null ? "Awaiting Stripe" : formatMoney(receipt.net_after_refunds)}</p></div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="mb-3 flex items-end justify-between gap-3">
+                    <div>
                       <h3 className="text-sm font-bold">Commitment register</h3>
                       <p className="mt-1 text-xs text-muted-foreground">Approved reservations grouped by their linked request.</p>
                     </div>
@@ -793,6 +1048,14 @@ export default function CivicPortalPage() {
                               {allocation.budget_name} · {allocation.fiscal_year} · {allocation.request_category} · {statusLabel(allocation.request_status)}
                             </p>
                             {allocation.notes && <p className="mt-1 text-xs text-muted-foreground">{allocation.notes}</p>}
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              Stripe transfer associated: {formatMoney(allocation.transfer_amount)} · Confirmed bank payout: {formatMoney(allocation.bank_paid_amount)}
+                            </p>
+                            {allocation.bank_payouts.map(payout => (
+                              <p key={`${allocation.id}-${payout.reference}`} className="mt-1 text-[10px] text-muted-foreground">
+                                Bank payout {payout.reference} · {statusLabel(payout.status)} · {formatMoney(payout.matched_amount)}
+                              </p>
+                            ))}
                           </div>
                           <div className="flex items-center justify-between gap-4 sm:justify-end">
                             <span data-testid={`status-allocation-${allocation.id}`} className="rounded-full bg-cyan-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-cyan-900">{allocation.status}</span>
@@ -1165,6 +1428,17 @@ export default function CivicPortalPage() {
           )}
         </div>
       </div>
+      {fundingPaymentIntent && (
+        <StripePaymentModal
+          clientSecret={fundingPaymentIntent.clientSecret}
+          amount={fundingPaymentIntent.amount}
+          description="This payment is a municipal budget receipt. New commitments wait for Stripe's signed receipt and available settlement."
+          returnUrl={`${window.location.origin}${window.location.pathname}`}
+          onSuccess={() => void finishBudgetPayment(false)}
+          onSkip={() => void finishBudgetPayment(true)}
+          onClose={() => void finishBudgetPayment(true)}
+        />
+      )}
     </div>
   );
 }

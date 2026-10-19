@@ -62,6 +62,7 @@ jest.unstable_mockModule("@workspace/db", () => ({
   transactionsTable: {},
   communityPoolLedgerTable: {},
   communityPoolFinancialEventsTable: {},
+  governmentBudgetReceiptsTable: {},
   poolPendingMinimumsTable: {},
   walletCashoutsTable: { id: "id", state: "state" },
   systemSettingsTable: { key: "key", value: "value" },
@@ -151,12 +152,19 @@ jest.unstable_mockModule("../lib/payout-service", () => ({
   executeHelperPayout,
 }));
 
+jest.unstable_mockModule("../lib/government-funding-reconciliation", () => ({
+  recordGovernmentConnectedPayout: jest.fn(),
+  recordGovernmentFundingTransfer: jest.fn(),
+  recordGovernmentFundingTransferReversal: jest.fn(),
+}));
+
 let app: express.Express;
 let requireApproved: jest.Mock;
 let canRecordPoolContributionWithoutStripe: (nodeEnv?: string) => boolean;
 
 beforeAll(async () => {
-  process.env.STRIPE_SECRET_KEY = "offline-test-key";
+  process.env.NODE_ENV = "test";
+  process.env.STRIPE_SECRET_KEY = "sk_test_offline";
   process.env.STRIPE_WEBHOOK_SECRET = "offline-webhook-secret";
   const auth = await import("../middlewares/auth");
   requireApproved = auth.requireApproved as unknown as jest.Mock;
@@ -642,6 +650,97 @@ describe("POST /api/stripe/webhook", () => {
     expect(db.execute).toHaveBeenCalledTimes(2);
   });
 
+  it("credits a municipal receipt only from a matching signed PaymentIntent event", async () => {
+    const governmentReceipt = {
+      id: 31,
+      government_sponsor_id: 8,
+      budget_id: 2,
+      community_id: 7,
+      created_by_user_id: 42,
+      gross_amount_cents: 500,
+      stripe_payment_intent_id: null,
+      status: "pending",
+    };
+    const metadata = {
+      pool_contribution: "true",
+      government_budget_receipt_id: "31",
+      government_sponsor_id: "8",
+      government_budget_id: "2",
+      community_id: "7",
+      user_id: "42",
+    };
+    stripeConstructEvent.mockReturnValue({
+      id: "evt_municipal_receipt",
+      livemode: false,
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_municipal_receipt",
+          amount: 500,
+          metadata,
+        },
+      },
+    });
+    stripePaymentIntentRetrieve.mockResolvedValue({
+      id: "pi_municipal_receipt",
+      amount: 500,
+      amount_received: 500,
+      currency: "usd",
+      latest_charge: "ch_municipal_receipt",
+      livemode: false,
+    });
+    stripeChargeRetrieve.mockResolvedValue({
+      id: "ch_municipal_receipt",
+      balance_transaction: "txn_municipal_receipt",
+    });
+    stripeBalanceTransactionRetrieve.mockResolvedValue({
+      id: "txn_municipal_receipt",
+      amount: 500,
+      currency: "usd",
+      fee: 45,
+      net: 455,
+      status: "available",
+      available_on: 1_756_000_000,
+    });
+    db.limit
+      .mockResolvedValueOnce([governmentReceipt])
+      .mockResolvedValueOnce([{ id: 41 }])
+      .mockResolvedValueOnce([{ id: 51 }]);
+    recordPoolContributionSettlement.mockResolvedValueOnce({
+      recorded: true,
+      alreadyRecorded: false,
+      ledgerId: 41,
+    });
+
+    const response = await request(app)
+      .post("/api/stripe/webhook")
+      .set("stripe-signature", "offline-signature")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ id: "evt_municipal_receipt", type: "payment_intent.succeeded" }));
+
+    expect(response.status).toBe(200);
+    expect(recordPoolContributionSettlement).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 42,
+      historyUserId: null,
+      communityId: 7,
+      governmentSponsorId: 8,
+      governmentBudgetId: 2,
+      settlement: expect.objectContaining({
+        stripeFeeCents: 45,
+        netAmountCents: 455,
+        stripeBalanceTransactionId: "txn_municipal_receipt",
+      }),
+    }));
+    expect(db.set).toHaveBeenCalledWith(expect.objectContaining({
+      stripe_payment_intent_id: "pi_municipal_receipt",
+      community_pool_ledger_id: 41,
+      community_pool_financial_event_id: 51,
+      gross_amount_cents: 500,
+      stripe_fee_cents: 45,
+      net_amount_cents: 455,
+    }));
+  });
+
   it("reverses a pool contribution refund even without a payment transaction row", async () => {
     stripeConstructEvent.mockReturnValue({
       id: "evt_pool_refund",
@@ -672,9 +771,10 @@ describe("POST /api/stripe/webhook", () => {
     expect(response.status).toBe(200);
     expect(reversePoolContributionOnRefund).toHaveBeenCalledWith({
       stripePaymentIntentId: "pi_pool_refund",
+      stripeChargeId: "ch_pool_refund",
       amountRefundedCents: 500,
       chargeAmountCents: 1000,
-      refundIdempotencyKey: "refund:ch_pool_refund:500",
+      refundIdempotencyKey: "refund:pi_pool_refund:ch_pool_refund:500",
     });
     expect(db.update).not.toHaveBeenCalled();
   });
@@ -702,7 +802,7 @@ describe("POST /api/stripe/webhook", () => {
       amount: 10,
       amount_refunded: 0,
     };
-    db.limit.mockResolvedValueOnce([existing]).mockResolvedValueOnce([]);
+    db.limit.mockResolvedValueOnce([]).mockResolvedValueOnce([existing]).mockResolvedValueOnce([]);
     db.returning.mockResolvedValueOnce([{ ...existing, amount_refunded: 5, state: "disputed" }]);
 
     const response = await request(app)

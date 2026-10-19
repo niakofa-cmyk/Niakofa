@@ -12,7 +12,11 @@ import { X, Loader2, Lock, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Z_MODAL } from "@/lib/zLayers";
 
-const STRIPE_PK = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
+// Development APIs deliberately accept test-mode intents only; use the
+// corresponding test publishable key so Elements cannot present live mode.
+const STRIPE_PK = (import.meta.env.DEV
+  ? import.meta.env.VITE_STRIPE_TEST_PUBLISHABLE_KEY
+  : import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY) as string | undefined;
 
 const stripePromise = STRIPE_PK ? loadStripe(STRIPE_PK) : null;
 

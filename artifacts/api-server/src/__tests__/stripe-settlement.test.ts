@@ -1,5 +1,8 @@
 import { describe, expect, it, jest } from "@jest/globals";
-import { getStripeSettlementBreakdown } from "../lib/stripe-settlement";
+import {
+  getStripeRefundNetBreakdown,
+  getStripeSettlementBreakdown,
+} from "../lib/stripe-settlement";
 
 describe("getStripeSettlementBreakdown", () => {
   it("uses Stripe Balance Transaction fee and net values without estimating", async () => {
@@ -132,5 +135,72 @@ describe("getStripeSettlementBreakdown", () => {
       climateContributionCents: 5,
       climateTransactionId: "txn_climate",
     })).rejects.toThrow("does not match the balance transaction");
+  });
+});
+
+describe("getStripeRefundNetBreakdown", () => {
+  it("uses the actual refund Balance Transaction net instead of a gross-ratio estimate", async () => {
+    const stripe = {
+      charges: {
+        retrieve: jest.fn().mockResolvedValue({ id: "ch_refund", amount_refunded: 500 }),
+      },
+      refunds: {
+        list: jest.fn().mockResolvedValue({
+          data: [{
+            id: "re_1",
+            amount: 500,
+            currency: "usd",
+            status: "succeeded",
+            balance_transaction: {
+              id: "txn_refund",
+              amount: -500,
+              currency: "usd",
+              fee: 0,
+              net: -472,
+            },
+          }],
+          has_more: false,
+        }),
+      },
+      balanceTransactions: { retrieve: jest.fn() },
+    } as never;
+
+    await expect(getStripeRefundNetBreakdown(stripe, "ch_refund")).resolves.toEqual({
+      amountRefundedCents: 500,
+      netRefundedCents: 472,
+      complete: true,
+    });
+    expect(stripe.refunds.list).toHaveBeenCalledWith({
+      charge: "ch_refund",
+      limit: 100,
+      expand: ["data.balance_transaction"],
+    });
+  });
+
+  it("fails closed while a successful refund has no Balance Transaction", async () => {
+    const stripe = {
+      charges: {
+        retrieve: jest.fn().mockResolvedValue({ id: "ch_pending", amount_refunded: 500 }),
+      },
+      refunds: {
+        list: jest.fn().mockResolvedValue({
+          data: [{
+            id: "re_pending",
+            amount: 500,
+            currency: "usd",
+            status: "succeeded",
+            balance_transaction: null,
+          }],
+          has_more: false,
+        }),
+      },
+      balanceTransactions: { retrieve: jest.fn() },
+    } as never;
+
+    await expect(getStripeRefundNetBreakdown(stripe, "ch_pending")).resolves.toEqual({
+      amountRefundedCents: 500,
+      netRefundedCents: 0,
+      complete: false,
+    });
   });
 });

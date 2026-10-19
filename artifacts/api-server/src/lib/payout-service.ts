@@ -5,6 +5,7 @@ import type { PayoutJobData } from "./queue";
 import { broadcast } from "./ws-hub";
 import { getStripeSecretKey } from "./stripe-config";
 import { isStripeTransferCapabilityError } from "./stripe-errors";
+import { recordGovernmentFundingTransfer } from "./government-funding-reconciliation";
 
 export async function executeHelperPayout(
   data: PayoutJobData,
@@ -173,6 +174,8 @@ export async function executeHelperPayout(
       })
       .onConflictDoNothing();
   });
+
+  await recordGovernmentFundingTransfer(transfer);
 
   broadcast({
     type: "payout_sent",
