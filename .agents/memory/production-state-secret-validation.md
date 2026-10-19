@@ -13,6 +13,16 @@ Do not generate production sessions from candidate account credentials until
 their disposable-account approval and intended test roles are independently
 confirmed.
 
+The operator states that the approved A/B/C accounts are already in the
+repository. This confirms account approval only; it does not by itself prove
+that a particular saved session is valid or has the sponsor role needed for a
+specific acceptance flow.
+
+**Why:** The operator explicitly identified these repository accounts as approved.
+
+**How to apply:** Use only the designated A/B/C accounts when an approved account
+is required, and still validate the session and role for the exact test scope.
+
 **Why:** The user explicitly prohibited using unverified candidate credentials
 to generate sessions.
 
