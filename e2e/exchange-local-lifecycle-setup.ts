@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import type { Pool as PgPool } from "pg";
 
 const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
 const cleanupLockName = "niakofa:exchange-local-lifecycle:e2e";
@@ -118,7 +119,7 @@ export default async function exchangeLocalLifecycleSetup(): Promise<(() => Prom
   requireLocalTargets();
 
   const dbRequire = createRequire(resolve(process.cwd(), "lib/db/package.json"));
-  const { Pool } = dbRequire("pg") as typeof import("pg");
+  const { Pool } = dbRequire("pg") as { Pool: typeof PgPool };
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
   const lock = await pool.connect();
   let lockHeld = false;

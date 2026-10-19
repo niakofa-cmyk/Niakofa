@@ -1,4 +1,4 @@
-import Stripe from "stripe";
+import type Stripe from "stripe";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,

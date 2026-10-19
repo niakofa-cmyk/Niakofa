@@ -1,4 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals";
+import type {
+  recordGovernmentConnectedPayout as RecordGovernmentConnectedPayout,
+  recordGovernmentFundingTransfer as RecordGovernmentFundingTransfer,
+} from "../lib/government-funding-reconciliation";
 
 const governmentConnectedPayoutsTable = { id: "payout_id" };
 const governmentFundingTransferLinksTable = { id: "link_id" };
@@ -79,8 +83,8 @@ jest.unstable_mockModule("../lib/logger", () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
 
-let recordGovernmentFundingTransfer: typeof import("../lib/government-funding-reconciliation").recordGovernmentFundingTransfer;
-let recordGovernmentConnectedPayout: typeof import("../lib/government-funding-reconciliation").recordGovernmentConnectedPayout;
+let recordGovernmentFundingTransfer: typeof RecordGovernmentFundingTransfer;
+let recordGovernmentConnectedPayout: typeof RecordGovernmentConnectedPayout;
 
 beforeAll(async () => {
   const reconciliation = await import("../lib/government-funding-reconciliation");
