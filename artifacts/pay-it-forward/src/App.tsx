@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect, Router as WouterRouter, useRoute } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter, useLocation, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider, keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -13,6 +13,7 @@ import { useServiceWorkerUpdate } from "@/hooks/useServiceWorkerUpdate";
 import { useBuildUpdateNotice } from "@/hooks/useBuildUpdateNotice";
 import { useAnimationPreference } from "@/hooks/useAnimationPreference";
 import { CIRCLE_ROUTE_ALIASES, SPIRAL_ROUTE_ALIASES } from "@/lib/spirals";
+import { KidsHomePage, WarForMarsLandingPage } from "@/pages/kids";
 
 import MapScreen from "@/pages/map";
 
@@ -156,6 +157,67 @@ function AppContent() {
   return <><FocusRefresh /><AppShell /><NiaGlobal /></>;
 }
 
-function App() { return <ErrorBoundary><QueryClientProvider client={queryClient}><TooltipProvider><AppProvider><SpiritEnvironmentProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><AppContent /></WouterRouter></SpiritEnvironmentProvider><Toaster /></AppProvider></TooltipProvider></QueryClientProvider></ErrorBoundary>; }
+function RoutedApp() {
+  const [location] = useLocation();
+  const pathname = (typeof window !== "undefined" ? window.location.pathname : location)
+    .replace(/\/+$/, "") || "/";
+  const isKidsHome = pathname === "/kids";
+  const isWarForMars = pathname === "/kids/wfm";
+
+  useEffect(() => {
+    if (!isKidsHome && !isWarForMars) return;
+
+    const page = isWarForMars
+      ? {
+          title: "War for Mars | Niakofa Kids",
+          description: "War for Mars is a Niakofa Kids game project. Gameplay, age guidance, multiplayer status, and public availability are not yet verified.",
+          path: "/kids/wfm",
+        }
+      : {
+          title: "Niakofa Kids | Big-hearted little worlds",
+          description: "Discover Niakofa Kids, a family destination shaped by curiosity, kindness, imagination, and community.",
+          path: "/kids/",
+        };
+    document.title = page.title;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", page.description);
+    document.querySelector('meta[property="og:title"]')?.setAttribute("content", page.title);
+    document.querySelector('meta[property="og:description"]')?.setAttribute("content", page.description);
+    document.querySelector('meta[property="og:url"]')?.setAttribute("content", `https://niakofa.com${page.path}`);
+
+    let canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.rel = "canonical";
+      document.head.append(canonical);
+    }
+    canonical.href = `https://niakofa.com${page.path}`;
+  }, [isKidsHome, isWarForMars]);
+
+  if (isKidsHome) return <KidsHomePage />;
+  if (isWarForMars) return <WarForMarsLandingPage />;
+
+  return (
+    <AppProvider>
+      <SpiritEnvironmentProvider>
+        <AppContent />
+        <Toaster />
+      </SpiritEnvironmentProvider>
+    </AppProvider>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <RoutedApp />
+          </WouterRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
+  );
+}
 
 export default App;
