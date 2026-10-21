@@ -6,6 +6,11 @@ Last updated: July 2026
 
 The Niakofa app (frontend + API server + Nia AI service) is deployed as a **single Railway service**.
 
+**Project boundary:** This guide covers the Niakofa app repository
+`niakofa-cmyk/Niakofa` in Railway project `precious-abundance`. The War for Mars
+game is separate (`niakofa-cmyk/WFM`, Railway project `hopeful-radiance`); use
+that repository and project's own build and deployment evidence for game work.
+
 - **Express API server** serves API routes at `/api/*` and WebSocket at `/ws`
 - **Nia AI service** runs on port 3001, proxied via `/api/nia/*` (INTERNAL_SECRET auth)
 - **Express** serves the pre-built React/Vite frontend when `SERVE_FRONTEND=true`

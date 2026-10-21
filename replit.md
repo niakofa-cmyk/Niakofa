@@ -10,6 +10,10 @@ instructions and durable implementation lessons in their designated files:
 `CLAUDE.md` for the shared family covenant and `.agents/memory/` for agent
 memory. Do not recreate a second project reference here.
 
+Before Railway work, distinguish the Niakofa app and War for Mars projects.
+The mapping is documented in the canonical reference and
+`.agents/memory/railway-project-mapping.md`.
+
 ## Running this import on Replit
 
 - Use Node.js 24 and restore dependencies with `./node_modules/.bin/pnpm install --frozen-lockfile` (the workspace pins pnpm 11.22.0).

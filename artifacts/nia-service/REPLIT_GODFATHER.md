@@ -173,6 +173,15 @@ pushing. Applies here too.
 
 ## Server Reference
 
+### Separate Railway projects
+
+- **Niakofa app:** repository `niakofa-cmyk/Niakofa`, Railway project `precious-abundance`.
+- **War for Mars game:** repository `niakofa-cmyk/WFM`, Railway project `hopeful-radiance`.
+
+These are separate products and deployment environments. Check the matching
+project before interpreting a build, health, or release result; do not use one
+project's status as evidence about the other.
+
 **Railway Service Name: zesty-ambition** — Niakofa App (api-server + React frontend)
 - Port 8080, domain `niakofa.com`
 - This is the primary deployable service. All community features, admin panel, payment processing, and the Nia proxy routes live here.

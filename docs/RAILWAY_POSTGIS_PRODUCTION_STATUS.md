@@ -2,6 +2,10 @@
 
 Last checked: 2026-10-09 (America/Chicago)
 
+> **Scope:** This report concerns the Niakofa app in Railway project
+> `precious-abundance`. The War for Mars game runs separately in
+> `hopeful-radiance`; its build and deployment status are not covered here.
+
 ## Confirmed
 
 - The Railway production project is `precious-abundance`; its production

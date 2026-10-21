@@ -49,6 +49,7 @@
 - [Production fail-closed boundaries](niakofa-production-fail-closed.md) — production CORS and migration startup must fail closed; development may retain explicit fallbacks.
 - [Production queue boundary](niakofa-production-queues.md) — durable Redis-backed workers are required before production API startup; interval fallbacks remain development-only.
 - [Railway production database boundary](railway-production-db-boundary.md) — confirm the app's actual Railway database target; service names do not prove PostGIS support or schema readiness.
+- [Railway product project mapping](railway-project-mapping.md) — War for Mars uses `hopeful-radiance`; the Niakofa app uses `precious-abundance`; verify each independently.
 - [Railway variable redaction](railway-variable-redaction.md) — variable presence does not reveal a production flag value when the Railway OAuth inventory redacts values; use safe readiness signals.
 - [Railway deletion read-after-write](railway-deletion-read-after-write.md) — after deleting a temporary service, re-read environment and staged state before retrying; inventory may lag.
 - [Uploaded reference security](uploaded-reference-security.md) — scan imported archives for credential-shaped values before staging or syncing them.

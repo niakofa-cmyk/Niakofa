@@ -4,6 +4,9 @@
 
 - The active product source is under `artifacts/` and shared packages under
   `lib/`. `niakofa-repo/` is an archived mirror; do not edit it.
+- Railway project mapping: Niakofa app (`niakofa-cmyk/Niakofa`) runs through
+  `precious-abundance`; War for Mars (`niakofa-cmyk/WFM`) runs through
+  `hopeful-radiance`. Check each project's deployment state independently.
 - Keep changes within the product and artifact that owns them. Do not copy
   uploaded or unlicensed reference source, assets, credentials, schemas, auth,
   or backend configuration into the product.

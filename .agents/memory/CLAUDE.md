@@ -11,6 +11,11 @@ things change.
 
 Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
 
+The War for Mars game is a separate product: repository `niakofa-cmyk/WFM`,
+Railway project `hopeful-radiance`. The Niakofa app in this monorepo uses
+Railway project `precious-abundance`; keep their deployment and build evidence
+separate.
+
 - **`artifacts/api-server`** (Railway service: `zesty-ambition`, domain
   `niakofa.com`) — the main Express API + React frontend, served together.
   Builder: Railpack, config in root `railway.toml`. Entry point:
